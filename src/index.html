@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TIOL - AI Local Photo Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="sidebar" aria-label="Menu">
+      <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos">📷</button>
+      <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders">📁</button>
+      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings">⚙</button>
+    </nav>
+
+    <main class="main">
+      <!-- Photos view -->
+      <section class="view" id="view-photos">
+        <div class="searchbar">
+          <input class="searchbar__input" id="search-input" type="text" data-i18n-placeholder="search.name.placeholder" />
+          <input class="searchbar__input" id="desc-search-input" type="text" data-i18n-placeholder="search.desc.placeholder" />
+        </div>
+        <div class="grid" id="photo-grid"></div>
+        <div class="statusbar" id="photo-status">0 张照片</div>
+      </section>
+
+      <!-- Folders view -->
+      <section class="view view--hidden" id="view-folders">
+        <div class="toolbar">
+          <button class="btn btn--primary" id="btn-add-folder" data-i18n="folders.add">+ 添加目录</button>
+          <button class="btn btn--ghost" id="btn-refresh" title="刷新" data-i18n-title="folders.refresh" data-i18n="folders.refresh">↻ 刷新</button>
+        </div>
+        <div class="folder-list" id="folder-list"></div>
+        <div class="statusbar" id="folder-status">0 个文件夹</div>
+      </section>
+
+      <!-- Settings view -->
+      <section class="view view--hidden" id="view-settings">
+        <div class="settings">
+          <h2 class="settings__title" data-i18n="settings.title">设置</h2>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.language">语言</span>
+            <div class="settings__langs" id="lang-options">
+              <button class="btn btn--ghost" data-lang="zh-CN" data-i18n="settings.languageZh">中文</button>
+              <button class="btn btn--ghost" data-lang="en-US" data-i18n="settings.languageEn">English</button>
+            </div>
+          </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.hwDecode">硬件加速解码</span>
+            <button class="btn btn--ghost" id="toggle-hw-decode" data-i18n="settings.off">关</button>
+          </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.cacheLabel">缩略图缓存</span>
+            <button class="btn btn--ghost" id="btn-clear-cache" data-i18n="settings.clearCache">清除缓存</button>
+          </div>
+          <div class="settings__hint" id="cache-hint" hidden></div>
+          <div class="settings__hint" id="hw-decode-hint" data-i18n="settings.hwDecodeHint" hidden>更改后需重启应用生效</div>
+          <div class="settings__hint" id="gpu-status"></div>
+          <button class="btn btn--ghost settings__restart" id="btn-restart" data-i18n="settings.restart" disabled>重启应用</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Image preview (modal, right panel) -->
+  <div class="preview-overlay" id="preview-overlay" hidden>
+    <div class="preview" id="preview-panel">
+      <div class="preview__header">
+        <span class="preview__name" id="preview-name"></span>
+        <button class="preview__close" id="preview-close" data-i18n-title="preview.close" aria-label="Close">✕</button>
+      </div>
+      <div class="preview__body">
+        <img id="preview-img" alt="" />
+        <div class="preview__error" id="preview-error" hidden></div>
+      </div>
+      <div class="preview__meta" id="preview-meta"></div>
+    </div>
+  </div>
+
+  <!-- Description edit dialog (replaces the native prompt()) -->
+  <div class="dialog-overlay" id="edit-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog__title" data-i18n="card.edit.title">编辑描述</div>
+      <input class="dialog__input" id="edit-input" type="text" />
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" id="edit-cancel" data-i18n="card.edit.cancel">取消</button>
+        <button class="btn btn--primary" id="edit-save" data-i18n="card.edit.save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

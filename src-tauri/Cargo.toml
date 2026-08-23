@@ -1,0 +1,38 @@
+[package]
+name = "tiol"
+version = "0.1.0"
+description = "TIOL - AI Local Photo Manager"
+authors = ["TIOL"]
+edition = "2021"
+rust-version = "1.70"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2"
+tauri = { version = "2", features = ["protocol-asset"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros", "rt-multi-thread"] }
+notify = "6.1"
+image = "0.24"
+log = "0.4"
+env_logger = "0.10"
+walkdir = "2.4"
+chrono = "0.4"
+sha2 = "0.10"
+hex = "0.4"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+# Thumbnail decode is the hot path; keep image deps optimized even in dev
+# builds (debug jpeg-decoder is ~20x slower and makes the photo grid feel
+# broken during development).
+[profile.dev.package.jpeg-decoder]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3

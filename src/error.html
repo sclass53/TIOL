@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TIOL</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="error-page">
+    <div id="zh">
+      <h1 class="error-page__title">无法加载应用内容</h1>
+      <p class="error-page__desc">应用服务未启动或连接失败。请稍后重试。</p>
+    </div>
+    <div id="en" hidden>
+      <h1 class="error-page__title">Failed to load app content</h1>
+      <p class="error-page__desc">The app service is offline or unreachable. Please try again.</p>
+    </div>
+    <button class="btn btn--primary" id="btn-retry">重试 / Retry</button>
+  </div>
+  <script>
+    document.getElementById("btn-retry").addEventListener("click", () => {
+      location.href = "index.html";
+    });
+    (async () => {
+      try {
+        const lang = await window.__TAURI__.core.invoke("get_setting", { key: "language" });
+        if (lang === "en-US") {
+          document.getElementById("zh").hidden = true;
+          document.getElementById("en").hidden = false;
+          document.documentElement.lang = "en-US";
+        }
+      } catch (e) {
+        /* keep Chinese default */
+      }
+    })();
+  </script>
+</body>
+</html>

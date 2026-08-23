@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "TIOL - AI Local Photo Manager"
+  },
+  "nav": {
+    "photos": "Photos",
+    "folders": "Folders",
+    "settings": "Settings"
+  },
+  "search": {
+    "name": {
+      "placeholder": "Search for filenames"
+    },
+    "desc": {
+      "placeholder": "Search for descriptions… e.g. planes"
+    }
+  },
+  "photos": {
+    "empty": "No photos — add a folder or try searching",
+    "status": {
+      "count": "{count} photos",
+      "partial": "{shown} / {total} photos"
+    }
+  },
+  "folders": {
+    "empty": "No folders added yet",
+    "add": "+ Add Folder",
+    "refresh": "↻ Refresh",
+    "remove": "Remove",
+    "count": "{count} photos",
+    "status": {
+      "count": "{count} folders"
+    }
+  },
+  "card": {
+    "edit": {
+      "title": "Edit description",
+      "prompt": "Enter a description for this photo (used for description search):",
+      "save": "Save",
+      "cancel": "Cancel"
+    }
+  },
+  "menu": {
+    "reveal": "Show in File Explorer"
+  },
+  "preview": {
+    "close": "Close preview",
+    "error": "Cannot preview this file"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageZh": "中文",
+    "languageEn": "English",
+    "hwDecode": "Hardware decoding",
+    "hwDecodeHint": "Restart the app for the change to take effect",
+    "restart": "Restart App",
+    "on": "On",
+    "off": "Off",
+    "cacheLabel": "Thumbnail cache",
+    "clearCache": "Clear cache",
+    "cacheCleared": "Cache cleared",
+    "gpu": "GPU renderer: {renderer}",
+    "gpuSoftware": "(software rendering — hardware acceleration inactive)",
+    "gpuUnknown": "GPU renderer: unable to detect"
+  }
+}

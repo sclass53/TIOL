@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "TIOL - AI 本地照片管理"
+  },
+  "nav": {
+    "photos": "照片",
+    "folders": "目录",
+    "settings": "设置"
+  },
+  "search": {
+    "name": {
+      "placeholder": "搜索文件名"
+    },
+    "desc": {
+      "placeholder": "搜索描述… 试试 飞机"
+    }
+  },
+  "photos": {
+    "empty": "暂无照片 — 请添加目录或尝试搜索",
+    "status": {
+      "count": "{count} 张照片",
+      "partial": "{shown} / {total} 张照片"
+    }
+  },
+  "folders": {
+    "empty": "尚未添加目录",
+    "add": "+ 添加目录",
+    "refresh": "↻ 刷新",
+    "remove": "移除",
+    "count": "{count} 张",
+    "status": {
+      "count": "{count} 个文件夹"
+    }
+  },
+  "card": {
+    "edit": {
+      "title": "编辑描述",
+      "prompt": "输入该照片的描述（用于描述搜索）：",
+      "save": "保存",
+      "cancel": "取消"
+    }
+  },
+  "menu": {
+    "reveal": "在文件资源管理器中显示"
+  },
+  "preview": {
+    "close": "关闭预览",
+    "error": "无法预览此文件"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "languageZh": "中文",
+    "languageEn": "English",
+    "hwDecode": "硬件加速解码",
+    "hwDecodeHint": "更改后需重启应用生效",
+    "restart": "重启应用",
+    "on": "开",
+    "off": "关",
+    "cacheLabel": "缩略图缓存",
+    "clearCache": "清除缓存",
+    "cacheCleared": "缓存已清除",
+    "gpu": "GPU 渲染器：{renderer}",
+    "gpuSoftware": "（软件渲染 — 硬件加速未生效）",
+    "gpuUnknown": "GPU 渲染器：无法检测"
+  }
+}
