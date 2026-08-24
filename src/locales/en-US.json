@@ -11,8 +11,17 @@
     "name": {
       "placeholder": "Search for filenames"
     },
-    "desc": {
-      "placeholder": "Search for descriptions… e.g. planes"
+    "semantic": {
+      "placeholder": "Semantic search (natural language)… e.g. a photo of a sunset",
+      "error": "Semantic search failed",
+      "unavailable": "AI not ready for semantic search"
+    },
+    "tag": {
+      "error": "Tag search failed"
+    },
+    "mode": {
+      "semantic": "Semantic",
+      "tag": "Tag"
     }
   },
   "photos": {
@@ -34,8 +43,8 @@
   },
   "card": {
     "edit": {
-      "title": "Edit description",
-      "prompt": "Enter a description for this photo (used for description search):",
+      "title": "Edit tags",
+      "placeholder": "Enter tags, comma-separated (AI tags are added automatically):",
       "save": "Save",
       "cancel": "Cancel"
     }
@@ -46,6 +55,15 @@
   "preview": {
     "close": "Close preview",
     "error": "Cannot preview this file"
+  },
+  "dialog": {
+    "confirmTitle": "Confirm action",
+    "ok": "OK",
+    "cancel": "Cancel"
+  },
+  "tagging": {
+    "badge": "Tagging in progress",
+    "remaining": "{count} left"
   },
   "settings": {
     "title": "Settings",
@@ -59,7 +77,29 @@
     "off": "Off",
     "cacheLabel": "Thumbnail cache",
     "clearCache": "Clear cache",
+    "clearTags": "Clear tags",
+    "clearTagsConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?",
     "cacheCleared": "Cache cleared",
+    "modelStatus": "AI models",
+    "modelLocked": "Ready",
+    "modelDownloading": "Downloading models",
+    "modelError": "Model error (AI unavailable)",
+    "aiProgress": "Inferring {done}/{remaining}",
+    "aiProvider": "Inference backend",
+    "aiAuto": "Auto",
+    "aiGpu": "GPU",
+    "aiCpu": "CPU",
+    "aiMlx": "Apple MLX",
+    "debug": "Debug mode",
+    "tags": "Custom tags",
+    "tagsHint": "Zero-shot AI recognition, no training; new tags apply to untagged photos immediately",
+    "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
+    "tagThreshold": "Threshold",
+    "tagCount": "{count} photos",
+    "addTag": "+ Add",
+    "removeTag": "Remove",
+    "tagsEmpty": "No tags defined — add one and the AI will tag your photos",
+    "tagNameRequired": "Please enter a tag name",
     "gpu": "GPU renderer: {renderer}",
     "gpuSoftware": "(software rendering — hardware acceleration inactive)",
     "gpuUnknown": "GPU renderer: unable to detect"

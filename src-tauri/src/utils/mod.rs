@@ -16,19 +16,35 @@ pub fn thumbnail_path(cache_dir: &Path, path: &str, mtime: i64) -> PathBuf {
 
 const THUMB_MAX_SIDE: u32 = 360; // 180*2 for DPR (LIMITS.md §5.5)
 
+/// Unique temp suffix so concurrent writers (prewarm worker + frontend
+/// get_thumbnail) never collide on the same temp file.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
 /// Generate thumbnail (360px JPEG) via the `image` crate.
 ///
 /// Note: a jpeg-decoder DCT-scaled fast path was tried and removed — it was
 /// measured 44x SLOWER than full decode + thumbnail (12s vs 0.27s for a 24MP
 /// JPEG, because the scaled path still entropy-decodes everything through a
 /// slow serial IDCT). Plain image::open + thumbnail is the fast path.
+///
+/// Writes to a unique temp file then renames atomically: a concurrent
+/// clear_cache (remove_dir_all) can never observe a half-written thumbnail,
+/// and readers never see a partial file.
 pub fn generate_thumbnail(src: &Path, dst: &Path) -> Result<(), String> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let img = image::open(src).map_err(|e| e.to_string())?;
     let thumb = img.thumbnail(THUMB_MAX_SIDE, THUMB_MAX_SIDE);
-    thumb.save(dst).map_err(|e| e.to_string())?;
+    let seq = TMP_SEQ.fetch_add(1, Ordering::SeqCst);
+    let tmp = dst.with_extension(format!("tmp{}_{}", std::process::id(), seq));
+    let _ = std::fs::remove_file(&tmp);
+    // save_with_format: the temp name has no image extension, so the `image`
+    // crate must not sniff the format from it (that silently fails).
+    thumb
+        .save_with_format(&tmp, image::ImageFormat::Jpeg)
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dst).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -101,4 +117,24 @@ pub fn enforce_cache_limit(cache_dir: &Path, max_bytes: u64) {
 
 pub fn cache_dir(app_dir: &Path) -> PathBuf {
     app_dir.join("cache").join("thumbnails")
+}
+
+/// ADD.md §9.1: storage key for paths — absolute, UNC-safe (dunce::simplified),
+/// forward slashes, lowercased. Used for DB uniqueness and cross-platform
+/// consistency. The real (display) path is kept in `display_path` for IO/UI.
+pub fn normalize_storage_path(p: &str) -> String {
+    let path = Path::new(p);
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut s = dunce::simplified(&abs)
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_lowercase();
+    while s.ends_with('/') {
+        s.pop();
+    }
+    s
 }

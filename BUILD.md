@@ -72,3 +72,29 @@ npm run tauri dev
 - 缩略图缓存：`%APPDATA%\com.tiol.desktop\cache\thumbnails`（上限 500MB，自动清理）
 - 重命名前的旧数据（`com.imagemanager.demo`）会在首次启动时自动迁移
 - 重置应用：删除上述目录后重启
+
+## 8. 网络受限环境（沙箱/无外网证书）下的构建
+
+本环境 schannel TLS 被限制（curl/cargo 直连 https 报 `SEC_E_NO_CREDENTIALS`），但 Node TLS 可用。解决依赖拉取：
+
+1. **启动本地代理**（把 cargo 稀疏索引转发到 ustc 镜像并重写下载地址）：
+   ```bash
+   node scripts/cargo-proxy.js     # 监听 127.0.0.1:8013
+   ```
+2. **cargo 指向代理 + 工作区 CARGO_HOME**（`.cargo/config.toml` 已配好）：
+   ```bash
+   $env:CARGO_HOME="E:\ImageManager\.cargo-home"
+   cargo fetch
+   ```
+3. **.crate 时间戳修复**：ustc 部分旧 crate 的 tar 时间戳（epoch 0）Windows 无法还原，导致 cargo 解包失败。一次性脚本已把所有 Cargo.lock crate 重新打包（修正时间戳）并预置进本地缓存：
+   ```bash
+   node scripts/vendor-crates.js
+   ```
+   之后 `cargo build/check` 直接离线使用缓存，无需网络。
+
+## 9. AI 模型（ADD.md）
+
+- 模型锁：`src-tauri/src/ai/model_lock.rs`（URL + size + SHA256 硬编码，运行时强制校验，损坏即删重下）
+- 模型目录：`%LOCALAPPDATA%\com.tiol.desktop\cache\models`（首次启动自动下载，hf-mirror → openi → huggingface.co 回退）
+- ONNX Runtime：`vendor/onnxruntime/win-x64/`（从 onnxruntime-node 提取）；运行时经 `libloading` 动态加载（ort `load-dynamic` 特性，无需 GitHub 下载）；打包时需把 DLL 放 exe 同目录（bundle resources）
+- 推理：DeepDanbooru 打标（>0.5）+ SigLIP2 图像/文本双编码（fp16），提供者链 DirectML → CPU

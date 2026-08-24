@@ -11,8 +11,17 @@
     "name": {
       "placeholder": "搜索文件名"
     },
-    "desc": {
-      "placeholder": "搜索描述… 试试 飞机"
+    "semantic": {
+      "placeholder": "语义搜索（自然语言）… 例如：一张日落的照片",
+      "error": "语义搜索失败",
+      "unavailable": "AI 尚未就绪，无法语义搜索"
+    },
+    "tag": {
+      "error": "标签搜索失败"
+    },
+    "mode": {
+      "semantic": "语义搜索",
+      "tag": "标签搜索"
     }
   },
   "photos": {
@@ -34,8 +43,8 @@
   },
   "card": {
     "edit": {
-      "title": "编辑描述",
-      "prompt": "输入该照片的描述（用于描述搜索）：",
+      "title": "编辑标签",
+      "placeholder": "输入标签，用逗号分隔（AI 标签自动生成）：",
       "save": "保存",
       "cancel": "取消"
     }
@@ -46,6 +55,15 @@
   "preview": {
     "close": "关闭预览",
     "error": "无法预览此文件"
+  },
+  "dialog": {
+    "confirmTitle": "确认操作",
+    "ok": "确定",
+    "cancel": "取消"
+  },
+  "tagging": {
+    "badge": "正在标记中",
+    "remaining": "剩余 {count} 张"
   },
   "settings": {
     "title": "设置",
@@ -59,7 +77,29 @@
     "off": "关",
     "cacheLabel": "缩略图缓存",
     "clearCache": "清除缓存",
+    "clearTags": "清除标记",
+    "clearTagsConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？",
     "cacheCleared": "缓存已清除",
+    "modelStatus": "AI 模型",
+    "modelLocked": "已就绪",
+    "modelDownloading": "正在下载模型",
+    "modelError": "模型异常（AI 功能不可用）",
+    "aiProgress": "推理中 {done}/{remaining}",
+    "aiProvider": "推理后端",
+    "aiAuto": "自动",
+    "aiGpu": "GPU",
+    "aiCpu": "CPU",
+    "aiMlx": "Apple MLX",
+    "debug": "调试模式",
+    "tags": "自定义标签",
+    "tagsHint": "AI 零样本识别，无需训练；新标签立即对未标记照片生效",
+    "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
+    "tagThreshold": "匹配阈值",
+    "tagCount": "{count} 张",
+    "addTag": "+ 添加",
+    "removeTag": "删除",
+    "tagsEmpty": "尚未定义标签 — 添加后 AI 会自动为照片打标签",
+    "tagNameRequired": "请输入标签名称",
     "gpu": "GPU 渲染器：{renderer}",
     "gpuSoftware": "（软件渲染 — 硬件加速未生效）",
     "gpuUnknown": "GPU 渲染器：无法检测"

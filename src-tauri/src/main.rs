@@ -5,19 +5,25 @@
 
 mod ai;
 mod db;
+mod error;
+mod logbuf;
 mod scanner;
+mod search;
 mod utils;
 mod watcher;
 
+use ai::engine::AIEngine;
+use ai::model_lock::ModelStatus;
 use db::{Db, FileRecord, Folder};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::io::Write as _;
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Background thumbnail prewarm: after a scan, generate missing thumbnails
 /// with a small worker pool so browsing is instant even for large libraries.
-/// On-demand generation (get_thumbnail) still wins for the visible viewport.
 fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {
     std::thread::spawn(move || {
         let cache = utils::cache_dir(&app_dir);
@@ -44,40 +50,36 @@ fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {
         }
         log::info!("thumb prewarm: {} files", paths.len());
         let (tx, rx) = std::sync::mpsc::channel::<String>();
-        // 2 workers: gentle background load, keeps CPU/disk for on-demand
-        // generation of whatever the user is actually looking at.
         let rx = Arc::new(std::sync::Mutex::new(rx));
         for _ in 0..2 {
             let rx = rx.clone();
             let cache = cache.clone();
-            std::thread::spawn(move || {
-                loop {
-                    let path = {
-                        let guard = rx.lock().unwrap();
-                        guard.recv()
-                    };
-                    let path = match path {
-                        Ok(p) => p,
-                        Err(_) => break, // channel closed
-                    };
-                    let p = std::path::Path::new(&path);
-                    let meta = match std::fs::metadata(p) {
-                        Ok(m) => m,
-                        Err(_) => continue,
-                    };
-                    let mtime = meta
-                        .modified()
-                        .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs() as i64)
-                        .unwrap_or(0);
-                    let thumb_path = utils::thumbnail_path(&cache, &path, mtime);
-                    if thumb_path.exists() {
-                        continue;
-                    }
-                    if let Err(e) = utils::generate_thumbnail(p, &thumb_path) {
-                        log::debug!("prewarm thumb failed for {}: {}", path, e);
-                    }
+            std::thread::spawn(move || loop {
+                let path = {
+                    let guard = rx.lock().unwrap();
+                    guard.recv()
+                };
+                let path = match path {
+                    Ok(p) => p,
+                    Err(_) => break,
+                };
+                let p = std::path::Path::new(&path);
+                let meta = match std::fs::metadata(p) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let thumb_path = utils::thumbnail_path(&cache, &path, mtime);
+                if thumb_path.exists() {
+                    continue;
+                }
+                if let Err(e) = utils::generate_thumbnail(p, &thumb_path) {
+                    log::debug!("prewarm thumb failed for {}: {}", path, e);
                 }
             });
         }
@@ -100,35 +102,122 @@ struct AppState {
     db: Arc<Db>,
     ai: ai::MockSkill,
     app_dir: std::path::PathBuf,
+    model_dir: std::path::PathBuf,
+    ai_queue: ai::queue::AITaskSender,
+    ai_control: Arc<ai::queue::AIControl>,
+    ai_engine: Arc<AsyncMutex<Option<AIEngine>>>,
+    tag_cache: Arc<std::sync::RwLock<Vec<ai::engine::TagVec>>>,
+    ai_status: Arc<std::sync::Mutex<Option<ModelStatus>>>,
+    watcher: Arc<std::sync::Mutex<Option<watcher::FileWatcher>>>,
+}
+
+/// Load (or reload) the AI engine with the provider mode from settings
+/// ("auto" | "gpu" | "cpu"). Updates the shared status afterwards.
+fn spawn_engine_load(
+    model_dir: std::path::PathBuf,
+    engine_holder: Arc<AsyncMutex<Option<AIEngine>>>,
+    status_holder: Arc<std::sync::Mutex<Option<ModelStatus>>>,
+    db: Arc<Db>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mode = db
+            .get_setting("ai_provider")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "auto".to_string());
+        match AIEngine::load(&model_dir, &mode) {
+            Ok((engine, backend)) => {
+                *engine_holder.lock().await = Some(engine);
+                log::info!("AI engine loaded (backend={})", backend);
+                *status_holder.lock().unwrap() = Some(ModelStatus::Locked(backend));
+            }
+            Err(e) => {
+                log::error!("AI engine load failed: {}", e);
+                *status_holder.lock().unwrap() = Some(ModelStatus::Degraded(e.to_string()));
+            }
+        }
+    });
+}
+
+/// (Re)build the file watcher for the current folder list. Watcher scans
+/// enqueue changed files into the AI queue and emit scan-complete.
+fn rebuild_watcher(state: &AppState, app: tauri::AppHandle) {
+    let db = state.db.clone();
+    let keys = match db.get_folder_keys() {
+        Ok(k) => k,
+        Err(e) => {
+            log::warn!("watcher: get_folder_keys failed: {}", e);
+            return;
+        }
+    };
+    if keys.is_empty() {
+        return;
+    }
+    let mut guard = state.watcher.lock().unwrap();
+    match watcher::FileWatcher::start(
+        db.clone(),
+        keys,
+        state.ai_queue.clone(),
+        state.ai_control.clone(),
+        app,
+    ) {
+        Ok(w) => {
+            *guard = Some(w);
+            log::info!("file watcher started");
+        }
+        Err(e) => log::warn!("watcher start failed: {}", e),
+    }
 }
 
 #[tauri::command]
-async fn add_folder(state: tauri::State<'_, AppState>, path: String) -> Result<i64, String> {
+async fn add_folder(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<i64, String> {
     log::info!("add_folder {}", path);
     let p = std::path::Path::new(&path);
     if !p.exists() || !p.is_dir() {
         return Err("Path does not exist or not a directory".to_string());
     }
     let id = state.db.add_folder(&path)?;
-    // Scan before returning (off the main thread) so the folder's photo count
-    // and the photo grid are final — no "numbers change after refresh" races.
     let db = state.db.clone();
+    let tx = state.ai_queue.clone();
+    let epoch = state.ai_control.epoch();
     let path_clone = path.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if let Err(e) = scanner::scan_folder(&db, id, &path_clone) {
-            log::error!("initial scan failed: {}", e);
+        match scanner::scan_folder(&db, id, &path_clone) {
+            Ok((_, _, pending)) => {
+                for fid in pending {
+                    if let Ok(Some(rec)) = db.get_file_by_id(fid) {
+                        let _ = tx.try_send(ai::queue::AITask::new(fid, rec.path, epoch));
+                    }
+                }
+            }
+            Err(e) => log::error!("initial scan failed: {}", e),
         }
     })
     .await
     .map_err(|e| e.to_string())?;
     spawn_thumb_prewarm(state.app_dir.clone(), state.db.clone());
+    rebuild_watcher(&state, app);
     Ok(id)
 }
 
 #[tauri::command]
-fn remove_folder(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
+fn remove_folder(
+    state: tauri::State<AppState>,
+    app: tauri::AppHandle,
+    id: i64,
+) -> Result<(), String> {
     log::info!("remove_folder {}", id);
-    state.db.remove_folder(id)
+    state.db.remove_folder(id)?;
+    // Invalidate queued AI work for the removed folder: tasks enqueued so far
+    // carry an older epoch and are skipped by the consumer instead of
+    // blocking newer work (ADD.md §5, user request).
+    state.ai_control.invalidate();
+    rebuild_watcher(&state, app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -156,6 +245,27 @@ fn search_description(state: tauri::State<AppState>, query: String) -> Result<Ve
     state.db.search_description(&query)
 }
 
+/// ADD.md §6/§7: dual-path search. mode = "tag" | "semantic".
+#[tauri::command]
+async fn search(
+    state: tauri::State<'_, AppState>,
+    query: String,
+    mode: String,
+) -> Result<Vec<FileRecord>, String> {
+    log::info!("search query={} mode={}", query, mode);
+    match mode.as_str() {
+        "tag" => search::tag_search(&state.db, &query).map_err(|e| e.to_string()),
+        "semantic" => {
+            let guard = state.ai_engine.lock().await;
+            match guard.as_ref() {
+                Some(eng) => search::semantic_search(&state.db, eng, &query).map_err(|e| e.to_string()),
+                None => Err("AI engine not ready (models not locked)".to_string()),
+            }
+        }
+        other => Err(format!("unknown search mode: {other}")),
+    }
+}
+
 #[tauri::command]
 fn update_description(
     state: tauri::State<AppState>,
@@ -164,6 +274,30 @@ fn update_description(
 ) -> Result<(), String> {
     log::info!("update_description id={} desc={}", id, description);
     state.db.update_description(id, &description)
+}
+
+/// Replace a file's MANUAL tags (source=0) with the given comma-separated
+/// list. Returns the updated record (tags included) so the UI can refresh
+/// the card without a full re-render.
+#[tauri::command]
+fn update_tags(
+    state: tauri::State<AppState>,
+    file_id: i64,
+    tags: Vec<String>,
+) -> Result<db::FileRecord, String> {
+    log::info!("update_tags file_id={} tags={:?}", file_id, tags);
+    state.db.replace_manual_tags(file_id, &tags)?;
+    state
+        .db
+        .get_file_by_id(file_id)?
+        .ok_or_else(|| "file not found".to_string())
+}
+
+/// All tags of one file (name, confidence, source) — the edit dialog uses
+/// source=0 entries as the "manual tags" it edits.
+#[tauri::command]
+fn get_file_tags(state: tauri::State<AppState>, file_id: i64) -> Result<Vec<db::FileTag>, String> {
+    state.db.get_file_tags(file_id)
 }
 
 #[tauri::command]
@@ -196,8 +330,6 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
     log::info!("reveal_in_folder {}", path);
     #[cfg(target_os = "windows")]
     {
-        // The DB stores forward-slash paths, but Explorer needs backslashes,
-        // and "/select,<path>" must be ONE argument or it ignores the command.
         let win_path = path.replace('/', "\\");
         let arg = format!("/select,{}", win_path);
         std::process::Command::new("explorer")
@@ -232,17 +364,193 @@ fn scan_folders(
 ) -> Result<Vec<(i64, usize, usize)>, String> {
     let folders = state.db.get_folders()?;
     let mut results = Vec::new();
-    // Limit concurrency to 2 via simple chunking
+    let mut pending: Vec<i64> = Vec::new();
     for chunk in folders.chunks(2) {
         for f in chunk {
-            let (changed, deleted) = scanner::scan_folder(&state.db, f.id, &f.path)?;
+            let (changed, deleted, mut p) = scanner::scan_folder(&state.db, f.id, &f.path)?;
             results.push((f.id, changed, deleted));
+            pending.append(&mut p);
         }
         let _ = app_handle.emit("scan-progress", &results);
     }
     let _ = app_handle.emit("scan-complete", &results);
+    // Enqueue new/changed files for AI processing.
+    let tx = state.ai_queue.clone();
+    let db = state.db.clone();
+    let epoch = state.ai_control.epoch();
+    std::thread::spawn(move || {
+        for fid in pending {
+            if let Ok(Some(rec)) = db.get_file_by_id(fid) {
+                let _ = tx.try_send(ai::queue::AITask::new(fid, rec.path, epoch));
+            }
+        }
+    });
     spawn_thumb_prewarm(state.app_dir.clone(), state.db.clone());
+    rebuild_watcher(&state, app_handle);
     Ok(results)
+}
+
+/// ADD.md §7: manually trigger AI processing for a file.
+#[tauri::command]
+fn process_file(state: tauri::State<AppState>, file_id: i64) -> Result<(), String> {
+    let rec = state
+        .db
+        .get_file_by_id(file_id)?
+        .ok_or_else(|| "file not found".to_string())?;
+    state
+        .ai_queue
+        .try_send(ai::queue::AITask::new(file_id, rec.path, state.ai_control.epoch()))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// ADD.md §7: add a few-shot custom tag from reference images (mean embedding).
+/// Rebuild the in-memory tag vector cache from the DB (embeds every tag with
+/// the SigLIP text encoder). Shared by the queue's tag matching.
+async fn rebuild_tag_cache(
+    db: Arc<Db>,
+    engine: Arc<AsyncMutex<Option<AIEngine>>>,
+    cache: Arc<std::sync::RwLock<Vec<ai::engine::TagVec>>>,
+) {
+    let tags = match db.get_custom_tags() {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("tag cache: get_custom_tags failed: {}", e);
+            return;
+        }
+    };
+    let mut out: Vec<ai::engine::TagVec> = Vec::new();
+    {
+        let guard = engine.lock().await;
+        if let Some(eng) = guard.as_ref() {
+            for t in &tags {
+                match eng.embed_text(&t.name) {
+                    Ok(v) => out.push(ai::engine::TagVec {
+                        name: t.name.clone(),
+                        threshold: t.threshold,
+                        vec: v,
+                    }),
+                    Err(e) => log::warn!("tag cache: embed_text({}) failed: {}", t.name, e),
+                }
+            }
+        }
+    }
+    if let Ok(mut g) = cache.write() {
+        *g = out;
+    }
+    log::info!("tag cache: {} tags embedded", tags.len());
+}
+
+/// Enqueue every photo missing the NEWLY added tag, checking ONLY that tag
+/// (existing tags are never re-evaluated — multi-label without the rework).
+fn retag_new_tag(state: &AppState, tag: ai::engine::TagVec) {
+    let db = state.db.clone();
+    let tx = state.ai_queue.clone();
+    let epoch = state.ai_control.epoch();
+    std::thread::spawn(move || {
+        if let Ok(files) = db.get_files_without_tag(&tag.name, 5000) {
+            log::info!("re-enqueueing {} files for new tag {:?}", files.len(), tag.name);
+            for (fid, path) in files {
+                let _ = tx.try_send(ai::queue::AITask::with_tag(fid, path, epoch, tag.clone()));
+            }
+        }
+    });
+}
+
+/// ADD.md §7 / MIGRATE1.md §2.2: add a USER-DEFINED text tag. Its text
+/// embedding (SigLIP) is stored in custom_tags and cached in memory; photos
+/// are tagged when their image vector matches above the tag threshold.
+#[tauri::command]
+async fn add_custom_tag(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    threshold: f64,
+) -> Result<i64, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("tag name is empty".to_string());
+    }
+    if !(0.01..=0.5).contains(&threshold) {
+        return Err("threshold must be in [0.01, 0.5]".to_string());
+    }
+    log::info!("add_custom_tag name={} threshold={}", name, threshold);
+    let guard = state.ai_engine.lock().await;
+    let engine = guard
+        .as_ref()
+        .ok_or_else(|| "AI engine not ready".to_string())?;
+    let vec = engine.embed_text(&name).map_err(|e| e.to_string())?;
+    drop(guard);
+    let id = state.db.add_custom_tag(&name, &vec, threshold)?;
+    // Refresh the cache, then check the NEW tag against every photo that
+    // doesn't have it yet (existing tags are left untouched).
+    rebuild_tag_cache(state.db.clone(), state.ai_engine.clone(), state.tag_cache.clone()).await;
+    if let Ok(cache) = state.tag_cache.read() {
+        if let Some(tv) = cache.iter().find(|t| t.name.eq_ignore_ascii_case(&name)) {
+            retag_new_tag(&state, tv.clone());
+        }
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+async fn delete_custom_tag(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+) -> Result<(), String> {
+    log::info!("delete_custom_tag id={}", id);
+    // Deleting a tag definition must also remove that tag from every photo
+    // (cards, tag search, counts) — not just the definition.
+    let name = state.db.get_custom_tag_name(id)?;
+    state.db.delete_custom_tag(id)?;
+    if let Some(name) = name {
+        log::info!("removing tag {:?} from all photos", name);
+        state.db.remove_tag_everywhere(&name)?;
+    }
+    rebuild_tag_cache(state.db.clone(), state.ai_engine.clone(), state.tag_cache.clone()).await;
+    Ok(())
+}
+
+/// Settings "clear tags" (confirm dialog on the frontend): full reset of
+/// tag definitions AND all photo tag assignments.
+#[tauri::command]
+async fn clear_all_tags(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    log::info!("clear_all_tags");
+    state.db.clear_all_tags()?;
+    rebuild_tag_cache(state.db.clone(), state.ai_engine.clone(), state.tag_cache.clone()).await;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_custom_tags(state: tauri::State<AppState>) -> Result<Vec<db::CustomTag>, String> {
+    state.db.get_custom_tags()
+}
+
+#[tauri::command]
+fn get_ai_status(state: tauri::State<AppState>) -> Result<String, String> {
+    let guard = state.ai_status.lock().unwrap();
+    Ok(match guard.as_ref() {
+        Some(ModelStatus::Locked(b)) => format!("locked:{b}"),
+        Some(ModelStatus::Degraded(r)) => format!("degraded: {r}"),
+        None => "unknown".to_string(),
+    })
+}
+
+/// Switch the inference backend: "auto" (detect), "gpu", "cpu", "mlx"
+/// (Apple MLX; falls back to CPU off-mac). Reloads the engine.
+#[tauri::command]
+fn set_ai_provider(state: tauri::State<AppState>, provider: String) -> Result<(), String> {
+    if !matches!(provider.as_str(), "auto" | "gpu" | "cpu" | "mlx") {
+        return Err("invalid provider (auto|gpu|cpu|mlx)".to_string());
+    }
+    log::info!("set_ai_provider {}", provider);
+    state.db.set_setting("ai_provider", &provider)?;
+    spawn_engine_load(
+        state.model_dir.clone(),
+        state.ai_engine.clone(),
+        state.ai_status.clone(),
+        state.db.clone(),
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -250,18 +558,14 @@ async fn get_thumbnail(
     state: tauri::State<'_, AppState>,
     path: String,
 ) -> Result<String, String> {
-    // Thumbnail generation decodes the full source image (LIMITS.md §5.5);
-    // run it off the main thread so the UI never blocks on it.
     let app_dir = state.app_dir.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Return thumbnail file path (generate if needed). Frontend uses convertFileSrc.
         let start = std::time::Instant::now();
         let p = std::path::Path::new(&path);
         let meta = match std::fs::metadata(p) {
             Ok(m) => m,
             Err(e) => {
                 log::warn!("thumb metadata failed for {}: {}", path, e);
-                // Empty string = "show placeholder", never load the original.
                 return Ok(String::new());
             }
         };
@@ -274,9 +578,6 @@ async fn get_thumbnail(
         let cache = utils::cache_dir(&app_dir);
         let thumb_path = utils::thumbnail_path(&cache, &path, mtime);
         if !thumb_path.exists() {
-            // Try generate; on failure (corrupt/unsupported/video) return an
-            // empty path so the UI shows a placeholder INSTEAD of loading the
-            // original file (decoding a corrupt full-size image stalls WebView).
             if let Err(e) = utils::generate_thumbnail(p, &thumb_path) {
                 log::warn!("thumb gen failed for {}: {}", path, e);
                 return Ok(String::new());
@@ -285,7 +586,6 @@ async fn get_thumbnail(
             if elapsed > 10000 {
                 log::warn!("thumb gen slow: {}ms for {}", elapsed, path);
             }
-            // enforce 500MB limit async
             let c = cache.clone();
             std::thread::spawn(move || {
                 utils::enforce_cache_limit(&c, 500 * 1024 * 1024);
@@ -297,8 +597,7 @@ async fn get_thumbnail(
     .map_err(|e| e.to_string())?
 }
 
-/// One-time migration of app data from the old identifier
-/// (com.imagemanager.demo) to the current one. Runs before the DB opens.
+/// One-time migration of app data from the old identifier.
 fn migrate_old_data(new_dir: &std::path::Path) {
     const OLD_IDENTIFIER: &str = "com.imagemanager.demo";
     let old_dir = match new_dir.parent() {
@@ -349,18 +648,86 @@ async fn clear_cache(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let cache = utils::cache_dir(&state.app_dir);
     tauri::async_runtime::spawn_blocking(move || {
         log::info!("clearing thumbnail cache {:?}", cache);
-        if cache.exists() {
-            std::fs::remove_dir_all(&cache).map_err(|e| e.to_string())?;
+        // Thumbnails can be mid-write (frontend requests / prewarm workers):
+        // retry with backoff before giving up — transient file locks on
+        // Windows otherwise fail the whole clear.
+        let mut last_err: Option<std::io::Error> = None;
+        for attempt in 0..5u32 {
+            if !cache.exists() {
+                return Ok::<(), String>(());
+            }
+            match std::fs::remove_dir_all(&cache) {
+                Ok(()) => return Ok::<(), String>(()),
+                Err(e) => {
+                    last_err = Some(e);
+                    std::thread::sleep(std::time::Duration::from_millis(250 * (attempt + 1) as u64));
+                }
+            }
         }
-        Ok::<(), String>(())
+        Err(last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "cache clear failed".to_string()))
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
+/// Frontend instrumentation: JS errors / rejected promises / thumbnail
+/// failures reported from the webview. Always written to the log buffer so
+/// the debug-mode panel (and stderr) can show what actually broke in the UI.
+#[tauri::command]
+fn report_js_event(kind: String, message: String) -> Result<(), String> {
+    log::info!("[webview:{kind}] {message}");
+    Ok(())
+}
+
+/// HH:MM:SS (UTC) for the log format.
+fn now_hms() -> String {
+    let d = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{:02}:{:02}:{:02}", (d / 3600) % 24, (d / 60) % 60, d % 60)
+}
+
+/// Debug mode: persist the toggle and raise/lower the global log level so the
+/// in-app log panel (get_logs) captures info+ lines only while enabled.
+#[tauri::command]
+fn set_debug_mode(state: tauri::State<AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .db
+        .set_setting("debug", if enabled { "1" } else { "0" })?;
+    log::set_max_level(if enabled {
+        log::LevelFilter::Info
+    } else {
+        log::LevelFilter::Error
+    });
+    log::info!("debug mode {}", if enabled { "on" } else { "off" });
+    Ok(())
+}
+
+/// Recent log lines for the debug panel (newest first).
+#[tauri::command]
+fn get_logs(limit: Option<usize>) -> Vec<String> {
+    logbuf::snapshot(limit.unwrap_or(200).min(1000))
+}
+
 fn main() {
-    env_logger::init();
-    // Use current_thread runtime per LIMITS.md:126 — Tauri will create its own runtime, we just limit our tasks.
+    logbuf::init();
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Info)
+        .format(|buf, record| {
+            let line = format!(
+                "[{} {}] {}: {}",
+                now_hms(),
+                record.level(),
+                record.target(),
+                record.args()
+            );
+            logbuf::push(line.clone());
+            writeln!(buf, "{line}")
+        })
+        .init();
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -370,20 +737,86 @@ fn main() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            // One-time migration from the old demo identifier
-            // (com.imagemanager.demo) to the new one: move the database and
-            // thumbnail cache so no data is lost after the rename.
             migrate_old_data(&app_dir);
             std::fs::create_dir_all(&app_dir).ok();
-            // ensure cache dir
             std::fs::create_dir_all(utils::cache_dir(&app_dir)).ok();
             let db_path = app_dir.join("db.sqlite");
             log::info!("db path {:?}", db_path);
             let db = Arc::new(Db::new(&db_path).expect("failed to init db"));
+            // Restore persisted debug-mode log level.
+            if db.get_setting("debug").ok().flatten().as_deref() == Some("1") {
+                log::set_max_level(log::LevelFilter::Info);
+            }
+            // Embedding-pipeline version gate (C-09): the pooler_output fix
+            // changed the embedding space — old embeddings are incompatible,
+            // so wipe + re-index once.
+            const EMBED_VERSION: &str = "pooler-v1";
+            if db.get_setting("embed_version").ok().flatten().as_deref() != Some(EMBED_VERSION) {
+                log::info!("embedding pipeline changed ({EMBED_VERSION}) — re-indexing all photos");
+                db.reindex_embeddings()?;
+                db.set_setting("embed_version", EMBED_VERSION)?;
+            }
+            // Self-heal: photos carrying BOTH a real tag and the "unknown"
+            // sentinel (older bug) lose the sentinel.
+            if let Ok(n) = db.cleanup_stray_unknown() {
+                if n > 0 {
+                    log::info!("cleaned {n} stray 'unknown' tags");
+                }
+            }
 
-            // Hardware-decoding setting: browser args only apply when the
-            // WebView2 environment is created, so the config window has
-            // "create": false and we build it here with the right args.
+            // ---- AI: model lock + download (ADD.md §4); engine loads after ----
+            let model_dir = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| app_dir.clone())
+                .join("models");
+            log::info!("model dir: {:?}", model_dir);
+
+            // ---- AI: queue + consumer (ADD.md §5) ----
+            let (ai_tx, ai_rx) = tokio::sync::mpsc::channel::<ai::queue::AITask>(ai::queue::QUEUE_CAPACITY);
+            let ai_engine: Arc<AsyncMutex<Option<AIEngine>>> = Arc::new(AsyncMutex::new(None));
+            let ai_status: Arc<std::sync::Mutex<Option<ModelStatus>>> = Arc::new(std::sync::Mutex::new(None));
+            let ai_control = Arc::new(ai::queue::AIControl::new());
+            // User-defined tag vectors (text embeddings), shared with the
+            // queue for zero-shot tag matching (MIGRATE1.md V3.0).
+            let tag_cache: Arc<std::sync::RwLock<Vec<ai::engine::TagVec>>> =
+                Arc::new(std::sync::RwLock::new(Vec::new()));
+            let consumer_db = db.clone();
+            let consumer_engine = ai_engine.clone();
+            let consumer_tags = tag_cache.clone();
+            let consumer_control = ai_control.clone();
+            let consumer_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                ai::queue::run_consumer(
+                    ai_rx,
+                    consumer_db,
+                    consumer_engine,
+                    consumer_tags,
+                    consumer_control,
+                    Some(consumer_app),
+                )
+                .await;
+            });
+
+            // ---- AI: model lock + download (ADD.md §4); engine loads after ----
+            {
+                let app_handle = app.handle().clone();
+                let status_holder = ai_status.clone();
+                let model_dir_task = model_dir.clone();
+                tauri::async_runtime::spawn(async move {
+                    let status = ai::downloader::init_models_async(model_dir_task, app_handle.clone()).await;
+                    {
+                        let mut s = status_holder.lock().unwrap();
+                        *s = Some(status.clone());
+                    }
+                    ai::downloader::emit_status(&app_handle, &status);
+                    if matches!(status, ModelStatus::Locked(_)) {
+                        log::info!("models verified — engine will load");
+                    }
+                });
+            }
+
+            // ---- window (hw decode + error page) ----
             let hw_args = match db.get_setting("hw_decode").ok().flatten().as_deref() {
                 Some("1") => "--enable-gpu --ignore-gpu-blocklist --enable-accelerated-video-decode --enable-zero-copy",
                 Some("0") => "--disable-gpu",
@@ -391,8 +824,6 @@ fn main() {
             };
             log::info!("hw_decode browser args: {:?}", hw_args);
             if let Some(window_cfg) = app.config().app.windows.iter().find(|w| !w.create) {
-                // Friendly in-app page replaces WebView2's built-in browser error
-                // page (ERR_CONNECTION_REFUSED etc.) when a navigation fails.
                 let scheme = if window_cfg.use_https_scheme {
                     "https"
                 } else {
@@ -411,9 +842,6 @@ fn main() {
                             return;
                         }
                         let url = payload.url().as_str();
-                        // A finished navigation to anything that is not our own
-                        // page means the load failed and WebView2 is showing its
-                        // built-in error page — replace it (once) with ours.
                         let is_app_page = url.ends_with("index.html")
                             || url.ends_with("error.html")
                             || url.ends_with('/');
@@ -427,31 +855,82 @@ fn main() {
                     })
                     .build()?;
             }
-            // startup incremental scan (LIMITS.md:107); emit scan-complete so
-            // the UI refreshes with final counts/photo list when it finishes,
-            // then prewarm thumbnails in the background.
-            let db_clone = db.clone();
-            let handle = app.handle().clone();
-            let prewarm_dir = app_dir.clone();
-            std::thread::spawn(move || {
-                if let Ok(folders) = db_clone.get_folders() {
-                    for f in folders {
-                        if let Err(e) = scanner::scan_folder(&db_clone, f.id, &f.path) {
-                            log::error!("startup scan {} failed: {}", f.path, e);
+
+            // ---- state ----
+            let state = AppState {
+                db: db.clone(),
+                ai: ai::MockSkill::new(),
+                app_dir: app_dir.clone(),
+                model_dir: model_dir.clone(),
+                ai_queue: ai_tx,
+                ai_control: ai_control.clone(),
+                ai_engine: ai_engine.clone(),
+                tag_cache: tag_cache.clone(),
+                ai_status: ai_status.clone(),
+                watcher: Arc::new(std::sync::Mutex::new(None)),
+            };
+            // Engine loads once models are verified (auto backend detection).
+            spawn_engine_load(model_dir.clone(), ai_engine.clone(), ai_status, db.clone());
+            // Build the user-tag vector cache once the engine is ready
+            // (MIGRATE1.md §2.2: tag vectors are cached in memory).
+            {
+                let cdb = db.clone();
+                let cengine = ai_engine.clone();
+                let ccache = tag_cache.clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..120 {
+                        if cengine.lock().await.is_some() {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                    rebuild_tag_cache(cdb, cengine, ccache).await;
+                });
+            }
+
+            // ---- startup scan (ADD.md §3.1) + watcher + prewarm + AI enqueue ----
+            {
+                let db_clone = db.clone();
+                let handle = app.handle().clone();
+                let prewarm_dir = app_dir.clone();
+                let tx = state.ai_queue.clone();
+                let db2 = db.clone();
+                let epoch = state.ai_control.epoch();
+                std::thread::spawn(move || {
+                    let mut pending: Vec<i64> = Vec::new();
+                    if let Ok(folders) = db_clone.get_folders() {
+                        for f in folders {
+                            if let Ok((_, _, mut p)) = scanner::scan_folder(&db_clone, f.id, &f.path) {
+                                pending.append(&mut p);
+                            } else {
+                                log::error!("startup scan {} failed", f.path);
+                            }
                         }
                     }
-                }
-                let _ = handle.emit("scan-complete", Vec::<(i64, usize, usize)>::new());
-                spawn_thumb_prewarm(prewarm_dir, db_clone);
-            });
-            // file watcher — needs tokio runtime, spawn with tokio if available
-            // For MVP we skip watcher in setup to avoid tokio runtime missing; watcher is started lazily on demand
-            // Store state
-            app.manage(AppState {
-                db,
-                ai: ai::MockSkill::new(),
-                app_dir,
-            });
+                    let _ = handle.emit("scan-complete", Vec::<(i64, usize, usize)>::new());
+                    for fid in pending {
+                        if let Ok(Some(rec)) = db2.get_file_by_id(fid) {
+                            let _ = tx.try_send(ai::queue::AITask::new(fid, rec.path, epoch));
+                        }
+                    }
+                    // Enqueue everything still pending AI processing (covers
+                    // migration + unchanged files from earlier sessions).
+                    if let Ok(files) = db2.get_pending_ai_files(5000) {
+                        log::info!("enqueueing {} files for AI processing", files.len());
+                        for (fid, path) in files {
+                            let _ = tx.try_send(ai::queue::AITask::new(fid, path, epoch));
+                        }
+                    }
+                    // NOTE: no full-library re-tag at startup (C-10.3) — only
+                    // files the scanner detected as changed/new (ai_processed
+                    // reset to 0 above) are re-processed. Existing photos are
+                    // touched again only when a NEW tag is added (single-tag
+                    // check) or the file itself changes.
+                    spawn_thumb_prewarm(prewarm_dir, db_clone);
+                });
+            }
+            rebuild_watcher(&state, app.handle().clone());
+            app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -461,7 +940,10 @@ fn main() {
             get_photos,
             search_files,
             search_description,
+            search,
             update_description,
+            update_tags,
+            get_file_tags,
             get_setting,
             set_setting,
             restart_app,
@@ -469,7 +951,17 @@ fn main() {
             reveal_in_folder,
             clear_cache,
             scan_folders,
-            get_thumbnail
+            get_thumbnail,
+            process_file,
+            add_custom_tag,
+            delete_custom_tag,
+            get_custom_tags,
+            clear_all_tags,
+            get_ai_status,
+            set_ai_provider,
+            set_debug_mode,
+            get_logs,
+            report_js_event
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

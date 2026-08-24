@@ -19,7 +19,11 @@
       <section class="view" id="view-photos">
         <div class="searchbar">
           <input class="searchbar__input" id="search-input" type="text" data-i18n-placeholder="search.name.placeholder" />
-          <input class="searchbar__input" id="desc-search-input" type="text" data-i18n-placeholder="search.desc.placeholder" />
+          <select class="searchbar__mode" id="search-mode" title="">
+            <option value="semantic" data-i18n="search.mode.semantic">语义搜索</option>
+            <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
+          </select>
+          <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
         </div>
         <div class="grid" id="photo-grid"></div>
         <div class="statusbar" id="photo-status">0 张照片</div>
@@ -53,10 +57,39 @@
           <div class="settings__row">
             <span class="settings__label" data-i18n="settings.cacheLabel">缩略图缓存</span>
             <button class="btn btn--ghost" id="btn-clear-cache" data-i18n="settings.clearCache">清除缓存</button>
+            <button class="btn btn--ghost" id="btn-clear-tags" data-i18n="settings.clearTags">清除标记</button>
+          </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.aiProvider">推理后端</span>
+            <div class="settings__langs" id="ai-provider-options">
+              <button class="btn btn--ghost" data-provider="auto" data-i18n="settings.aiAuto">自动</button>
+              <button class="btn btn--ghost" data-provider="gpu" data-i18n="settings.aiGpu">GPU</button>
+              <button class="btn btn--ghost" data-provider="cpu" data-i18n="settings.aiCpu">CPU</button>
+              <button class="btn btn--ghost" data-provider="mlx" data-i18n="settings.aiMlx">Apple MLX</button>
+            </div>
+          </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.tags">自定义标签</span>
+            <span class="settings__hint" data-i18n="settings.tagsHint">AI 自动识别，无需训练</span>
+          </div>
+          <div class="settings__row settings__tag-add">
+            <input class="settings__tag-input" id="tag-input" type="text" data-i18n-placeholder="settings.tagPlaceholder" />
+            <input class="settings__tag-threshold" id="tag-threshold" type="number" min="0.01" max="0.5" step="0.01" value="0.06" data-i18n-title="settings.tagThreshold" />
+            <button class="btn btn--ghost" id="btn-add-tag" data-i18n="settings.addTag">+ 添加</button>
+          </div>
+          <ul class="settings__tag-list" id="tag-list"></ul>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.modelStatus">AI 模型</span>
+            <span class="settings__hint" id="model-status">…</span>
+          </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.debug">调试模式</span>
+            <button class="btn btn--ghost" id="toggle-debug" data-i18n="settings.off">关</button>
           </div>
           <div class="settings__hint" id="cache-hint" hidden></div>
           <div class="settings__hint" id="hw-decode-hint" data-i18n="settings.hwDecodeHint" hidden>更改后需重启应用生效</div>
           <div class="settings__hint" id="gpu-status"></div>
+          <pre class="settings__log" id="debug-log" hidden></pre>
           <button class="btn btn--ghost settings__restart" id="btn-restart" data-i18n="settings.restart" disabled>重启应用</button>
         </div>
       </section>
@@ -78,16 +111,37 @@
     </div>
   </div>
 
-  <!-- Description edit dialog (replaces the native prompt()) -->
+  <!-- Tag edit dialog (comma-separated, replaces the old description dialog) -->
   <div class="dialog-overlay" id="edit-overlay" hidden>
     <div class="dialog" role="dialog" aria-modal="true">
-      <div class="dialog__title" data-i18n="card.edit.title">编辑描述</div>
-      <input class="dialog__input" id="edit-input" type="text" />
+      <div class="dialog__title" data-i18n="card.edit.title">编辑标签</div>
+      <input class="dialog__input" id="edit-input" type="text" data-i18n-placeholder="card.edit.placeholder" />
       <div class="dialog__actions">
         <button class="btn btn--ghost" id="edit-cancel" data-i18n="card.edit.cancel">取消</button>
         <button class="btn btn--primary" id="edit-save" data-i18n="card.edit.save">保存</button>
       </div>
     </div>
+  </div>
+
+  <!-- Generic confirm dialog (clears tags, etc.) -->
+  <div class="dialog-overlay" id="confirm-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog__title" data-i18n="dialog.confirmTitle">确认操作</div>
+      <div class="dialog__text" id="confirm-text"></div>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" id="confirm-cancel" data-i18n="dialog.cancel">取消</button>
+        <button class="btn btn--primary" id="confirm-ok" data-i18n="dialog.ok">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background tagging progress badge (top-right, all views) -->
+  <div class="tagging-badge" id="tagging-badge" hidden>
+    <span class="tagging-badge__title" data-i18n="tagging.badge">正在标记中</span>
+    <div class="tagging-badge__bar">
+      <div class="tagging-badge__fill" id="tagging-fill"></div>
+    </div>
+    <span class="tagging-badge__count" id="tagging-count"></span>
   </div>
 
   <script type="module" src="app.js"></script>

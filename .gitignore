@@ -1,5 +1,31 @@
+# Rust / Tauri build outputs
 target/
-node_modules/
 dist/
+build/
+
+# Dependencies / caches (offline vendored registry is machine-local)
+node_modules/
 .npm-cache/
+.cargo-home/
+.cargo/
+models-download/
+
+# Runtime-downloaded models must never be committed
+src-tauri/resources/
+
+# App data & temp files
+*.part
+*.bundled.tmp
+*.log
+dev-log.txt
 npm-trace.txt
+
+# Test fixtures (local only)
+test_imgs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

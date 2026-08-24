@@ -3,6 +3,24 @@ const { invoke, convertFileSrc } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { open: openDialog } = window.__TAURI__.dialog;
 
+// Frontend instrumentation: every JS error / rejected promise / thumbnail
+// failure is reported to the backend log buffer (visible in the debug-mode
+// panel and stderr) — the only way to debug UI failures without a console.
+function reportJs(kind, message) {
+  try {
+    invoke("report_js_event", { kind, message: String(message).slice(0, 500) });
+  } catch (e) {
+    /* never block the UI on reporting */
+  }
+}
+window.addEventListener("error", (e) => {
+  reportJs("error", `${e.message || e.error} @ ${e.filename || "?"}:${e.lineno || "?"}`);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  reportJs("rejection", (r && (r.stack || r.message || r)) || String(r));
+});
+
 import {
   t,
   setLanguage,
@@ -25,13 +43,22 @@ const els = {
   btnRestart: document.getElementById("btn-restart"),
   gpuStatus: document.getElementById("gpu-status"),
   btnClearCache: document.getElementById("btn-clear-cache"),
+  btnClearTags: document.getElementById("btn-clear-tags"),
   cacheHint: document.getElementById("cache-hint"),
+  confirmOverlay: document.getElementById("confirm-overlay"),
+  confirmText: document.getElementById("confirm-text"),
+  confirmOk: document.getElementById("confirm-ok"),
+  confirmCancel: document.getElementById("confirm-cancel"),
+  taggingBadge: document.getElementById("tagging-badge"),
+  taggingFill: document.getElementById("tagging-fill"),
+  taggingCount: document.getElementById("tagging-count"),
   editOverlay: document.getElementById("edit-overlay"),
   editInput: document.getElementById("edit-input"),
   editSave: document.getElementById("edit-save"),
   editCancel: document.getElementById("edit-cancel"),
   searchInput: document.getElementById("search-input"),
-  descSearchInput: document.getElementById("desc-search-input"),
+  searchMode: document.getElementById("search-mode"),
+  semanticSearchInput: document.getElementById("semantic-search-input"),
   photoGrid: document.getElementById("photo-grid"),
   photoStatus: document.getElementById("photo-status"),
   folderList: document.getElementById("folder-list"),
@@ -60,7 +87,13 @@ function switchView(name) {
   if (isPhotos) requestAnimationFrame(fillGridIfNeeded);
 }
 
-els.navPhotos.addEventListener("click", () => switchView("photos"));
+els.navPhotos.addEventListener("click", () => {
+  switchView("photos");
+  // Re-fetch so cards show freshly computed tags (stale-tag fix).
+  if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
+    loadPhotos();
+  }
+});
 els.navFolders.addEventListener("click", () => { switchView("folders"); loadFolders(); });
 els.navSettings.addEventListener("click", () => { switchView("settings"); renderSettings(); });
 
@@ -82,6 +115,17 @@ async function renderSettings() {
   });
   renderHwDecode();
   detectAndReportRenderer();
+  refreshModelStatus();
+  renderDebug();
+  renderTags();
+  if (aiProvider === null) {
+    try {
+      aiProvider = (await invoke("get_setting", { key: "ai_provider" })) || "auto";
+    } catch (e) {
+      aiProvider = "auto";
+    }
+  }
+  renderAiProvider();
 }
 
 function renderHwDecode() {
@@ -127,6 +171,281 @@ els.btnClearCache.addEventListener("click", async () => {
   } catch (e) {
     alert(String(e));
   }
+});
+
+// --- generic confirm dialog (warning before destructive actions) ---
+let confirmCallback = null;
+
+function confirmDialog(message, onOk) {
+  els.confirmText.textContent = message;
+  confirmCallback = onOk;
+  els.confirmOverlay.hidden = false;
+}
+function closeConfirmDialog() {
+  confirmCallback = null;
+  els.confirmOverlay.hidden = true;
+}
+els.confirmOk.addEventListener("click", () => {
+  const cb = confirmCallback;
+  closeConfirmDialog();
+  if (cb) cb();
+});
+els.confirmCancel.addEventListener("click", closeConfirmDialog);
+els.confirmOverlay.addEventListener("click", (e) => {
+  if (e.target === els.confirmOverlay) closeConfirmDialog();
+});
+
+els.btnClearTags.addEventListener("click", () => {
+  confirmDialog(t("settings.clearTagsConfirm"), async () => {
+    try {
+      await invoke("clear_all_tags");
+      renderTags();
+      if (!els.viewPhotos.classList.contains("view--hidden")) loadPhotos();
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+});
+
+// --- AI progress: settings status line + floating tagging badge ---
+// Event: "ai-queue-status" { done, remaining } — remaining = tasks still in
+// the queue (grows when new tasks are added, so the badge count follows).
+const modelStatusEl = document.getElementById("model-status");
+const aiProviderOptions = document.getElementById("ai-provider-options");
+let aiProvider = null; // "auto" | "gpu" | "cpu" | "mlx"
+let modelBaseText = "…"; // status without the inference-progress suffix
+let aiProgress = null; // { done, remaining } | null
+
+function setModelStatus(text) {
+  modelBaseText = text;
+  renderModelStatus();
+}
+function renderModelStatus() {
+  let text = modelBaseText;
+  if (aiProgress && aiProgress.remaining > 0) {
+    text += ` · ${t("settings.aiProgress", {
+      done: aiProgress.done,
+      remaining: aiProgress.remaining,
+    })}`;
+  }
+  modelStatusEl.textContent = text;
+}
+listen("ai-queue-status", (ev) => {
+  const d = ev.payload || {};
+  const remaining = d.remaining || 0;
+  const done = d.done || 0;
+  aiProgress = d;
+  renderModelStatus();
+  // Floating badge (top-right): visible while background work remains.
+  els.taggingBadge.hidden = remaining <= 0;
+  if (remaining > 0) {
+    els.taggingCount.textContent = t("tagging.remaining", { count: remaining });
+    const total = done + remaining;
+    els.taggingFill.style.width =
+      total > 0 ? `${Math.round((done / total) * 100)}%` : "0%";
+  }
+  // Queue drained: refresh card tags (photos view) AND the settings tag
+  // match counts, so they never stay stale after a tagging batch.
+  if (remaining <= 0) {
+    renderTags();
+    if (!els.viewPhotos.classList.contains("view--hidden")) {
+      if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
+        loadPhotos();
+      }
+    }
+  }
+});
+
+function backendLabel(status) {
+  // status: "locked:cuda" | "locked:directml" | "locked:coreml" | "locked:cpu"
+  const b = status.split(":")[1];
+  if (!b) return t("settings.modelLocked");
+  return `${t("settings.modelLocked")} (${b.toUpperCase()})`;
+}
+function modelStatusText(status) {
+  if (status.startsWith("locked")) return backendLabel(status);
+  if (status.startsWith("degraded")) return status.replace("degraded: ", t("settings.modelError") + " — ");
+  switch (status) {
+    case "downloading":
+      return t("settings.modelDownloading");
+    case "error":
+      return t("settings.modelError");
+    default:
+      return status;
+  }
+}
+listen("model-download", (ev) => {
+  const d = ev.payload || {};
+  if (d.status === "locked") {
+    setModelStatus(t("settings.modelLocked"));
+  } else if (d.status === "downloading") {
+    const pct = d.progress !== undefined ? ` ${Math.round(d.progress * 100)}%` : "";
+    setModelStatus(`${t("settings.modelDownloading")} ${d.file_name || ""}${pct}`.trim());
+  } else {
+    setModelStatus(d.message || d.status || "");
+  }
+});
+async function refreshModelStatus() {
+  try {
+    const s = await invoke("get_ai_status");
+    setModelStatus(modelStatusText(s));
+  } catch (e) {
+    /* keep default */
+  }
+}
+
+function renderAiProvider() {
+  aiProviderOptions.querySelectorAll("[data-provider]").forEach((btn) => {
+    btn.classList.toggle("btn--active", btn.dataset.provider === aiProvider);
+  });
+}
+aiProviderOptions.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-provider]");
+  if (!btn || btn.dataset.provider === aiProvider) return;
+  try {
+    await invoke("set_ai_provider", { provider: btn.dataset.provider });
+    aiProvider = btn.dataset.provider;
+    renderAiProvider();
+    refreshModelStatus();
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
+// --- Debug mode: in-app log panel (get_logs / set_debug_mode) ---
+const debugEls = {
+  toggle: document.getElementById("toggle-debug"),
+  log: document.getElementById("debug-log"),
+};
+let debugValue = null; // "1" | "0"
+let debugMode = false; // live flag: gates AI-confidence badges on cards
+let logPollTimer = null;
+
+async function renderDebug() {
+  if (debugValue === null) {
+    try {
+      debugValue = (await invoke("get_setting", { key: "debug" })) || "0";
+    } catch (e) {
+      debugValue = "0";
+    }
+  }
+  const on = debugValue === "1";
+  debugMode = on;
+  debugEls.toggle.textContent = t(on ? "settings.on" : "settings.off");
+  debugEls.toggle.classList.toggle("btn--active", on);
+  debugEls.log.hidden = !on;
+  if (on) {
+    startLogPolling();
+  } else {
+    stopLogPolling();
+  }
+}
+
+debugEls.toggle.addEventListener("click", async () => {
+  const next = debugValue === "1" ? "0" : "1";
+  try {
+    await invoke("set_debug_mode", { enabled: next === "1" });
+    debugValue = next;
+    await renderDebug();
+    // Re-render cards so AI-confidence badges appear/disappear right away.
+    renderPhotos(currentPhotos);
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
+async function pollLogs() {
+  if (debugValue !== "1" || debugEls.log.hidden) return;
+  try {
+    const lines = await invoke("get_logs", { limit: 300 });
+    const pre = debugEls.log;
+    const stick =
+      pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+    pre.textContent = lines.join("\n");
+    if (stick) pre.scrollTop = pre.scrollHeight;
+  } catch (e) {
+    /* keep last snapshot */
+  }
+}
+function startLogPolling() {
+  stopLogPolling();
+  pollLogs();
+  logPollTimer = setInterval(pollLogs, 1000);
+}
+function stopLogPolling() {
+  if (logPollTimer) {
+    clearInterval(logPollTimer);
+    logPollTimer = null;
+  }
+}
+
+// --- Custom tag management (MIGRATE1.md §2.3: user-defined zero-shot tags) ---
+const tagEls = {
+  input: document.getElementById("tag-input"),
+  threshold: document.getElementById("tag-threshold"),
+  add: document.getElementById("btn-add-tag"),
+  list: document.getElementById("tag-list"),
+};
+
+async function renderTags() {
+  let tags = [];
+  try {
+    tags = await invoke("get_custom_tags");
+  } catch (e) {
+    reportJs("get-tags", String(e));
+  }
+  tagEls.list.textContent = "";
+  if (!tags.length) {
+    const li = document.createElement("li");
+    li.className = "settings__tag-empty";
+    li.textContent = t("settings.tagsEmpty");
+    tagEls.list.appendChild(li);
+    return;
+  }
+  for (const tg of tags) {
+    const li = document.createElement("li");
+    li.className = "settings__tag-item";
+    const name = document.createElement("span");
+    name.className = "settings__tag-name";
+    name.textContent = tg.name;
+    const meta = document.createElement("span");
+    meta.className = "settings__tag-meta";
+    meta.textContent = `${t("settings.tagThreshold")}: ${Number(tg.threshold).toFixed(2)} · ${t("settings.tagCount", { count: tg.photo_count })}`;
+    const del = document.createElement("button");
+    del.className = "btn btn--ghost";
+    del.textContent = t("settings.removeTag");
+    del.addEventListener("click", async () => {
+      try {
+        await invoke("delete_custom_tag", { id: tg.id });
+        renderTags();
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+    li.appendChild(name);
+    li.appendChild(meta);
+    li.appendChild(del);
+    tagEls.list.appendChild(li);
+  }
+}
+
+tagEls.add.addEventListener("click", async () => {
+  const name = tagEls.input.value.trim();
+  const threshold = parseFloat(tagEls.threshold.value) || 0.06;
+  if (!name) {
+    alert(t("settings.tagNameRequired"));
+    return;
+  }
+  try {
+    await invoke("add_custom_tag", { name, threshold });
+    tagEls.input.value = "";
+    renderTags();
+  } catch (e) {
+    alert(String(e));
+  }
+});
+tagEls.input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") tagEls.add.click();
 });
 
 // --- GPU renderer status (verifies hardware decoding took effect) ---
@@ -185,21 +504,30 @@ function renderPhotos(photos) {
   // Initial render: exactly the top 5 rows (in order). Further rows are
   // rendered on scroll / viewport fill.
   renderChunk(cardsPerRow() * 5);
-  // Deterministic initial thumbnail load: explicitly request the first
+  // Deterministic initial thumbnail load: explicitly enqueue the first
   // screenful top-down (the observer's initial callback proved unreliable
   // for cards already in the DOM — it skipped the first rows).
-  // NOTE: iterate BOTTOM-UP — setThumb unshifts to the queue head, so the
-  // last processed card would win the front; reversed order keeps card 0
-  // (top row) first in the serve order.
+  // Iterate BOTTOM-UP: enqueueThumb unshifts to the queue head, so the last
+  // processed card would win the front; reversed order keeps card 0 (top
+  // row) first. _initial is set AFTER enqueueing so the enqueue is not
+  // blocked, then the observer/click can no longer re-prioritize these.
+  // One bad card must never kill the whole screenful — per-card try/catch,
+  // and a card that failed to enqueue stays unmarked so click/observer can
+  // retry it.
   for (let i = renderedCount - 1; i >= 0; i--) {
     const card = els.photoGrid.children[i];
-    if (card && card._img && card._photo) {
-      // Mark as handled by the initial load: the observer/click must not
-      // re-queue or re-prioritize these (that reordered rows).
-      card._img._initial = true;
-      setThumb(card._img, card._photo);
+    const img = card && card._img;
+    if (!img || !card._photo) continue;
+    try {
+      enqueueThumb(img, card._photo);
+      img._initial = true;
+    } catch (e) {
+      reportJs("enqueue", String(e));
     }
   }
+  // Pump unconditionally (no-op on an empty queue) so a zero-return from
+  // enqueueThumb can never leave the screenful stuck unserved.
+  pumpThumbs();
 }
 
 function renderChunk(limit = CHUNK_APPEND) {
@@ -302,14 +630,16 @@ function showPlaceholder(img, photo) {
   img.remove();
 }
 
-function setThumb(img, photo) {
+/// Enqueue (or serve from cache / re-prioritize) one card's thumbnail.
+/// Returns true when a NEW entry was queued (caller decides when to pump).
+function enqueueThumb(img, photo) {
   const cached = thumbSrcCache.get(photo.path);
   if (cached !== undefined) {
     if (cached) img.src = cached;
     else showPlaceholder(img, photo);
-    return;
+    return false;
   }
-  const idx = thumbQueue.findIndex((q) => q.p.path === photo.path);
+  const idx = thumbQueue.findIndex((q) => q.photo.path === photo.path);
   if (idx >= 0) {
     // Scroll-time cards move to the front (viewport-first). Initial-screenful
     // cards keep their top-down serve order — reprioritizing them reorders
@@ -318,14 +648,18 @@ function setThumb(img, photo) {
       const item = thumbQueue.splice(idx, 1)[0];
       thumbQueue.unshift(item);
     }
-    return;
+    return false;
   }
   // Already handled by the explicit initial load (queued, in flight or
   // served) — never enqueue a duplicate that would jump the queue.
-  if (img._initial) return;
+  if (img._initial) return false;
   // New requests go to the front (viewport-first instead of FIFO).
   thumbQueue.unshift({ img, photo });
-  pumpThumbs();
+  return true;
+}
+
+function setThumb(img, photo) {
+  if (enqueueThumb(img, photo)) pumpThumbs();
 }
 
 function pumpThumbs() {
@@ -350,9 +684,10 @@ function pumpThumbs() {
         thumbSrcCache.set(photo.path, src);
         if (src && img.isConnected) img.src = src;
       })
-      .catch(() => {
+      .catch((err) => {
         thumbSrcCache.set(photo.path, "");
         showPlaceholder(img, photo);
+        reportJs("thumb-fail", `${photo.path}: ${err}`);
       })
       .finally(() => {
         thumbInFlight--;
@@ -361,12 +696,22 @@ function pumpThumbs() {
   }
 }
 
-// --- description edit dialog (in-app, replaces the native prompt()) ---
+// --- tag edit dialog (comma-separated, replaces the description editor) ---
 let editPhoto = null;
 
-function openEditDialog(photo) {
+async function openEditDialog(photo) {
   editPhoto = photo;
-  els.editInput.value = photo.description || "";
+  // Prefill with the file's MANUAL tags (source=0) only.
+  let manual = [];
+  try {
+    const tags = await invoke("get_file_tags", { fileId: photo.id });
+    manual = (tags || [])
+      .filter((tg) => tg.source === 0)
+      .map((tg) => tg.name);
+  } catch (e) {
+    reportJs("get-tags", String(e));
+  }
+  els.editInput.value = manual.join(", ");
   els.editOverlay.hidden = false;
   els.editInput.focus();
   els.editInput.select();
@@ -381,11 +726,31 @@ async function closeEditDialog(save) {
   const p = editPhoto;
   editPhoto = null;
   try {
-    await invoke("update_description", { id: p.id, description: els.editInput.value });
-    p.description = els.editInput.value;
+    const tags = els.editInput.value
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const updated = await invoke("update_tags", { fileId: p.id, tags });
+    p.tags = updated.tags || [];
+    if (p._card) renderCardMeta(p._card, p);
     runSearch();
   } catch (e) {
     alert(String(e));
+  }
+}
+
+/// Re-render the meta row of one card (name + tag list) after a tag edit.
+function renderCardMeta(card, p) {
+  const meta = card.querySelector(".card__meta");
+  if (!meta) return;
+  meta.querySelectorAll(".card__desc").forEach((el) => el.remove());
+  if (p.tags && p.tags.length) {
+    const tagsText = p.tags.join(", ");
+    const descEl = document.createElement("div");
+    descEl.className = "card__desc";
+    descEl.textContent = tagsText;
+    descEl.title = tagsText;
+    meta.appendChild(descEl);
   }
 }
 
@@ -415,8 +780,16 @@ function buildCard(p) {
   thumb.appendChild(img);
   thumb._img = img;
   thumb._photo = p;
+  // Debug-mode AI confidence badge (semantic search fills FileRecord.score).
+  if (debugMode && p.score != null) {
+    const badge = document.createElement("span");
+    badge.className = "card__score";
+    badge.textContent = `AI ${p.score.toFixed(3)}`;
+    thumb.appendChild(badge);
+  }
   thumbObserver.observe(thumb);
   card._photo = p;
+  card._img = img;
 
   const meta = document.createElement("div");
   meta.className = "card__meta";
@@ -437,19 +810,26 @@ function buildCard(p) {
   metaRow.appendChild(nameEl);
   metaRow.appendChild(editBtn);
   meta.appendChild(metaRow);
-  if (p.description) {
+  if (p.tags && p.tags.length) {
+    const tagsText = p.tags.join(", ");
     const descEl = document.createElement("div");
     descEl.className = "card__desc";
-    descEl.textContent = p.description;
-    descEl.title = p.description;
+    descEl.textContent = tagsText;
+    descEl.title = tagsText;
     meta.appendChild(descEl);
   }
   card.appendChild(thumb);
   card.appendChild(meta);
-  // click: prioritize this card's thumbnail (queue head), then open preview
+  p._card = card;
+  // click: prioritize this card's thumbnail (queue head), then open preview.
+  // setThumb must never prevent the preview from opening.
   card.style.cursor = "pointer";
   card.addEventListener("click", () => {
-    setThumb(img, p);
+    try {
+      setThumb(img, p);
+    } catch (e) {
+      reportJs("click", String(e));
+    }
     preview.open(p);
   });
   return card;
@@ -662,8 +1042,9 @@ function renderFolders(folders) {
 }
 
 // ---------------------------------------------------------------------------
-// Dual search (name + description) with 500ms debounce per LIMITS.md:145.
-// When both boxes have text, results are intersected (AND).
+// Search (name + semantic/tag) with 500ms debounce per LIMITS.md:145.
+// The right box searches via the mode dropdown (semantic | tag); the left
+// box is the filename search. Right box takes priority when filled.
 // ---------------------------------------------------------------------------
 let searchTimer = null;
 function scheduleSearch() {
@@ -671,28 +1052,38 @@ function scheduleSearch() {
   searchTimer = setTimeout(runSearch, 500);
 }
 els.searchInput.addEventListener("input", scheduleSearch);
-els.descSearchInput.addEventListener("input", scheduleSearch);
+els.semanticSearchInput.addEventListener("input", scheduleSearch);
+els.searchMode.addEventListener("change", scheduleSearch);
 
 async function runSearch() {
+  const q2 = els.semanticSearchInput.value.trim();
   const qName = els.searchInput.value.trim();
-  const qDesc = els.descSearchInput.value.trim();
-  if (!qName && !qDesc) {
+  const mode = els.searchMode.value;
+  if (q2) {
+    try {
+      const res = await invoke("search", { query: q2, mode });
+      renderPhotos(res);
+    } catch (e) {
+      console.error(e);
+      renderPhotos([]);
+      const msg = String(e);
+      if (mode === "semantic") {
+        els.photoStatus.textContent = msg.includes("not ready")
+          ? t("search.semantic.unavailable")
+          : t("search.semantic.error");
+      } else {
+        els.photoStatus.textContent = t("search.tag.error");
+      }
+    }
+    return;
+  }
+  if (!qName) {
     loadPhotos();
     return;
   }
   try {
-    let nameRes = null;
-    let descRes = null;
-    if (qName) nameRes = await invoke("search_files", { query: qName });
-    if (qDesc) descRes = await invoke("search_description", { query: qDesc });
-    let merged;
-    if (nameRes && descRes) {
-      const descPaths = new Set(descRes.map((r) => r.path));
-      merged = nameRes.filter((r) => descPaths.has(r.path));
-    } else {
-      merged = nameRes || descRes || [];
-    }
-    renderPhotos(merged);
+    const nameRes = await invoke("search_files", { query: qName });
+    renderPhotos(nameRes || []);
   } catch (e) {
     console.error(e);
   }
@@ -759,6 +1150,12 @@ onLanguageChange(() => {
     console.error(e);
   }
   applyStaticI18n();
+  // Debug flag gates AI-confidence badges — read it before first render.
+  try {
+    debugMode = (await invoke("get_setting", { key: "debug" })) === "1";
+  } catch (e) {
+    debugMode = false;
+  }
   loadPhotos();
   loadFolders();
   detectAndReportRenderer();

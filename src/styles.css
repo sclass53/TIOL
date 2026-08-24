@@ -122,6 +122,18 @@ html, body {
 
 .searchbar__input::placeholder { color: var(--text-secondary); }
 
+.searchbar__mode {
+  flex: 0 0 auto;
+  height: 36px;
+  background: var(--bg-surface);
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 0 8px;
+  outline: none;
+  cursor: pointer;
+}
+
 /* Photo grid */
 .grid {
   flex: 1;
@@ -156,6 +168,7 @@ html, body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
 }
 
 .card__thumb img {
@@ -163,6 +176,21 @@ html, body {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Debug-mode AI confidence badge (semantic-search results only) */
+.card__score {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #7ee787;
+  font: 11px/1.6 Consolas, "Cascadia Mono", monospace;
+  padding: 1px 6px;
+  border-radius: 6px;
+  z-index: 2;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .card__thumb--placeholder {
@@ -259,6 +287,7 @@ html, body {
 
 .folder-list {
   flex: 1;
+  min-height: 0; /* flex column: allow shrinking so overflow-y actually scrolls */
   overflow-y: auto;
   padding: 12px 16px;
   display: flex;
@@ -318,12 +347,21 @@ html, body {
   padding: 24px;
 }
 
-/* Settings view */
+/* Settings view — scrollable within the viewport (it outgrows the window
+   once custom tags / debug log are present) */
 .settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+/* Never squeeze children (e.g. the debug log panel) when content overflows —
+   the container must scroll instead. */
+.settings > * {
+  flex-shrink: 0;
 }
 
 /* In-app error page (shown instead of the WebView2 built-in error page) */
@@ -378,6 +416,132 @@ html, body {
 
 .settings__restart {
   align-self: flex-start;
+}
+
+/* Custom tag management (MIGRATE1.md §2.3) */
+.settings__tag-add {
+  gap: 8px;
+}
+.settings__tag-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  background: var(--bg-surface);
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 0 10px;
+  outline: none;
+}
+.settings__tag-threshold {
+  width: 88px;
+  height: 30px;
+  background: var(--bg-surface);
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 0 6px;
+  outline: none;
+}
+.settings__tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings__tag-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius);
+}
+.settings__tag-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.settings__tag-meta {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.settings__tag-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 2px;
+}
+
+/* Generic confirm dialog */
+.dialog__text {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 4px 0 12px;
+}
+
+/* Background tagging progress badge (fixed top-right) */
+.tagging-badge {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 900;
+  min-width: 200px;
+  background: rgba(20, 22, 26, 0.92);
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+/* display:flex above must NOT override the hidden attribute (this was the
+   "badge stuck on screen" bug — author display beats the UA [hidden] rule). */
+.tagging-badge[hidden] {
+  display: none;
+}
+.tagging-badge__title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.tagging-badge__bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.tagging-badge__fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--accent, #4f8cff);
+  transition: width 0.3s ease;
+}
+.tagging-badge__count {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+/* Debug-mode log panel (in-app logs) */
+.settings__log {
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  background: #14161a;
+  color: #c8d0da;
+  font: 11px/1.5 Consolas, "Cascadia Mono", monospace;
+  border-radius: var(--radius);
+  border: 1px solid var(--separator);
+  padding: 10px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* Description edit dialog (in-app, replaces the native prompt()) */

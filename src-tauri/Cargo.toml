@@ -15,7 +15,7 @@ serde_json = "1.0"
 url = "2"
 tauri = { version = "2", features = ["protocol-asset"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
-tokio = { version = "1", features = ["rt", "time", "sync", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros", "rt-multi-thread", "fs", "io-util", "process"] }
 notify = "6.1"
 image = "0.24"
 log = "0.4"
@@ -27,6 +27,26 @@ hex = "0.4"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+
+# ADD.md: AI backend stack
+# 1.16.x is yanked; newest usable release is 2.0.0-rc.13 (load-dynamic = runtime
+# DLL loading via libloading, no GitHub binary download at build time).
+# GPU providers: CUDA (NVIDIA) + DirectML (Windows) + CoreML (Apple Silicon)
+# are compiled in; at runtime each falls back silently to CPU when its DLLs
+# are absent — we only ship the CPU onnxruntime.dll.
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["load-dynamic", "ndarray", "half", "cuda", "directml", "coreml"] }
+half = "2"
+# 0.17 to match ort's ndarray (trait impls align)
+ndarray = "0.17"
+dunce = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+tokenizers = "0.21"
+thiserror = "1"
+futures-util = "0.3"
+sysinfo = "0.30"
+
+[dev-dependencies]
+tempfile = "3"
 
 # Thumbnail decode is the hot path; keep image deps optimized even in dev
 # builds (debug jpeg-decoder is ~20x slower and makes the photo grid feel
