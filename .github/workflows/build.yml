@@ -43,6 +43,9 @@ jobs:
   build-windows:
     name: Windows (x64)
     runs-on: windows-latest
+    # tauri-action / softprops need the token explicitly (C-11.9).
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -107,6 +110,9 @@ jobs:
   build-macos:
     name: macOS (Apple Silicon)
     runs-on: macos-14
+    # tauri-action / softprops need the token explicitly (C-11.9).
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 

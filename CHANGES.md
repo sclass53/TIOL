@@ -84,6 +84,10 @@
 
 **使用**：`git tag v0.1.0 && git push origin v0.1.0` → CI 完成后 GitHub Releases 页出现草稿（含 msi/nsis/.app + 两个便携 zip）→ 人工点 Publish 正式发布。
 
+## C-11.9 · 2025-07 — CI 修复：tauri-action 需要显式 GITHUB_TOKEN
+
+**tag 触发运行失败**：`Error: GITHUB_TOKEN is required`——tauri-action 创建/更新 Release 时读取 `GITHUB_TOKEN` 环境变量，**不会自动注入**，必须在 job 级显式传入。修复：两个 job 加 `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`（自动 token，无需配置；配合 workflow 级 `permissions: contents: write` 具备写权限）。附带确认：macOS 编译+打包+tar 打包已成功，问题仅在 Release 创建一步。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。
