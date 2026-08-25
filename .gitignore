@@ -9,6 +9,7 @@ node_modules/
 .cargo-home/
 .cargo/
 models-download/
+models-fp16-dl/
 
 # Runtime-downloaded models must never be committed
 src-tauri/resources/

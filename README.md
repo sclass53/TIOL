@@ -11,7 +11,7 @@ Privacy-first, local-first photo management. All photos stay on your own hard dr
 - 📁 **Directory Management**: Add/remove photo directories, file system monitoring (new/modified files are automatically queued for processing)
 - 🔍 **Dual‑path Search**: **Semantic search** (natural language, e.g., *"a cup of coffee"*) + **Tag search** (millisecond SQL)
 - 🏷️ **Custom Labels**: Zero‑shot AI tagging – enter any labels (Chinese or English) in settings
-- 🖥️ **Inference Backend Options**: auto / GPU / CPU / Apple MLX (macOS uses CoreML for native Apple acceleration) – fully local inference
+- 🖥️ **Inference Backend Options**: auto / GPU / CPU / Apple CoreML (macOS native Neural Engine acceleration) – fully local inference
 - 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
 
 ## Quick Start

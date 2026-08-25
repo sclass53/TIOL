@@ -558,12 +558,12 @@ fn get_ai_status(state: tauri::State<AppState>) -> Result<String, String> {
     })
 }
 
-/// Switch the inference backend: "auto" (detect), "gpu", "cpu", "mlx"
-/// (Apple MLX; falls back to CPU off-mac). Reloads the engine.
+/// Switch the inference backend: "auto" (detect), "gpu", "cpu", "coreml"
+/// (Apple CoreML; falls back to CPU elsewhere). Reloads the engine.
 #[tauri::command]
 fn set_ai_provider(state: tauri::State<AppState>, provider: String) -> Result<(), String> {
-    if !matches!(provider.as_str(), "auto" | "gpu" | "cpu" | "mlx") {
-        return Err("invalid provider (auto|gpu|cpu|mlx)".to_string());
+    if !matches!(provider.as_str(), "auto" | "gpu" | "cpu" | "coreml") {
+        return Err("invalid provider (auto|gpu|cpu|coreml)".to_string());
     }
     log::info!("set_ai_provider {}", provider);
     state.db.set_setting("ai_provider", &provider)?;

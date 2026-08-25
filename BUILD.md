@@ -7,7 +7,7 @@
 
 - **Tauri v2**（Rust 后端 + 原生 HTML/CSS/JS 前端，**无打包器、无 node_modules**）
 - 前端直接嵌入二进制（`frontendDist: ../src`），构建**不需要 npm install**
-- AI：纯 SigLIP2 int8（vision/text 编码器 + tokenizer，约 412MB，运行时下载），ORT 2.0.0-rc.13 以 `load-dynamic` 方式加载本机 onnxruntime 动态库
+- AI：纯 SigLIP2（Windows/Linux **int8** 412MB；**macOS fp16 784MB**——Apple Silicon 的官方 ORT CPU EP 无 ConvInteger 内核，int8 模型无法运行，见 C-11.14），运行时下载
 - SQLite（rusqlite bundled，源码编译，无外部依赖）
 
 ## 1. 环境准备
@@ -46,8 +46,9 @@
   - 发布：复制到 `src-tauri/target/release/onnxruntime.dll`（与 TIOL.exe 同目录）
   - **警告（C-11.2）**：Win11 24H2+ 系统内置了 `C:\Windows\system32\onnxruntime.dll`（最小版，CPU EP 无 ConvInteger 内核）。若 exe 旁缺少我们的 DLL，ort 会经 PATH 误加载系统版，表现为 cpu 模式报 `Could not find an implementation for ConvInteger(10)`。应用启动时会自动把 `ORT_DYLIB_PATH` 钉到 exe 同目录的 DLL（存在时），**但 exe 旁仍必须放我们的 DLL**。
   - 注意：该 DLL 不含 DirectML/CUDA EP——`gpu` 模式在本仓库环境下实为 CPU 回退（标签显示后端名，属已知外观问题）
-- **macOS**：仓库**未内置**，需要从官方 Releases 获取 **universal2 且编译时启用 CoreML EP 的 `libonnxruntime.dylib`**（微软官方 macOS 构建默认含 CoreML EP）：
-  - **版本必须 ≥ 1.17**（ort 2.0.0-rc.13 的 `ORT_API_VERSION = 17`，旧版本加载时报 `BadVersion`——推荐 **1.20.x**，如 `onnxruntime-osx-universal2-1.20.1.tgz`）
+- **macOS**：仓库**未内置**，需要从官方 Releases 获取 **arm64（Apple Silicon）且编译时启用 CoreML EP 的 `libonnxruntime.dylib`**（微软官方 macOS 构建默认含 CoreML EP）：
+  - **版本必须 ≥ 1.17**（ort 2.0.0-rc.13 的 `ORT_API_VERSION = 17`，旧版本加载时报 `BadVersion`）；当前 CI 固定 **1.28.1**（`onnxruntime-osx-arm64-1.28.1.tgz`——新版本已改为分架构打包，我们的 .app 仅 arm64，Intel Mac 不在支持范围）
+  - 应用内置 `build_session` 使用 **Level1 基础图优化**：1.20.x/1.27 的 LayerNorm 高级融合对 fp16 导出会崩溃（`InsertedPrecisionFreeCast`），Level1 在任何版本都安全（C-11.14）
   - 开发运行：放到可执行文件同目录，或设置环境变量 `ORT_DYLIB_PATH=/path/to/libonnxruntime.dylib`
   - 发布：随 .app 打包（`bundle.resources` 放入 `Contents/Frameworks` 并签名），或首次启动下载到应用缓存目录后设置 `ORT_DYLIB_PATH`（参见 CHANGES.md C-10.6 的方案 B）
   - CoreML.framework 为 macOS 系统自带，**无需安装**；但 dylib 本身必须分发
@@ -137,8 +138,8 @@ cargo build
 ### 4.3 AI 模型（内置下载器，用户无需操作）
 
 - 模型目录：应用数据目录下 `models/`（Windows `%LOCALAPPDATA%\com.tiol.desktop\models`；macOS `~/Library/Caches/com.tiol.desktop/models`——以 tauri `path()` 解析为准）
-- 首次启动自动下载 3 个文件（vision/text int8 + tokenizer，约 412MB），镜像链：**hf-mirror.com → openi.org.cn → huggingface.co**
-- 模型锁：`model_lock.rs` 硬编码 URL + size + SHA256，校验失败即删重下（断点续传 `.part` + 原子改名）
+- 首次启动自动下载 3 个文件（Windows/Linux：vision/text int8 + tokenizer ≈ 412MB；**macOS：vision/text fp16 + tokenizer ≈ 784MB**），镜像链：**hf-mirror.com → openi.org.cn → huggingface.co**
+- 模型锁：`model_lock.rs` 按平台返回锁表（`model_lock()`），硬编码 URL + size + SHA256，校验失败即删重下（断点续传 `.part` + 原子改名）
 - 手动预下载（本机代理网络）：`node scripts/download-models.js <目标目录>`，之后拷入模型目录即可跳过下载
 - 开发环境已装好模型时，测试可用 `TIOL_MODEL_DIR` 指向模型目录
 
@@ -191,5 +192,5 @@ cargo test -- --ignored
 | auto | 探测 CUDA → DirectML → CoreML → CPU，真实冒烟推理验证后选用 |
 | gpu | 强制 GPU 提供链（本仓库内置 DLL 无 GPU EP 时实际回退 CPU，标签显示真实后端） |
 | cpu | 仅 CPU |
-| mlx | Apple 加速器：macOS 走 CoreML（ort 2.0.0-rc.13 无 MLX EP，CoreML 即 Apple 原生加速）；非 Apple 平台回退 CPU |
+| coreml | Apple CoreML（macOS 专用，Neural Engine 加速；fp16 模型支持，构建失败自动回退 CPU）；非 Apple 平台直接回退 CPU |
 

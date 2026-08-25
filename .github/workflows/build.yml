@@ -33,11 +33,12 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # macOS ONNX Runtime (universal2, CoreML EP included). MUST be >= 1.17:
-  # ort 2.0.0-rc.13 hard-rejects older runtimes with BadVersion
-  # (ORT_API_VERSION = 17; 1.16.3 produced "BadVersion" at load, C-11.13).
-  ORT_MAC_VERSION: "1.20.1"
-  ORT_MAC_URL: "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-osx-universal2-1.20.1.tgz"
+  # macOS ONNX Runtime (arm64 — our .app is arm64-only; newer releases ship
+  # per-arch instead of universal2). MUST be >= 1.17 (ort rc.13 ORT_API_VERSION
+  # = 17 rejects older with BadVersion). Pinned 1.28.1: newer fixes the
+  # LayerNorm-fusion crash on fp16 exports seen in 1.20.x/1.27 (C-11.14).
+  ORT_MAC_VERSION: "1.28.1"
+  ORT_MAC_URL: "https://github.com/microsoft/onnxruntime/releases/download/v1.28.1/onnxruntime-osx-arm64-1.28.1.tgz"
   # Fill in after one successful CI run (compute via `shasum -a 256 ort.tgz`
   # on any fast machine) — verification activates automatically when set.
   ORT_MAC_SHA256: ""

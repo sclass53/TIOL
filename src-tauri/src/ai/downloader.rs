@@ -3,7 +3,7 @@
 //! fallback (hf-mirror -> openi -> huggingface.co; modelscope excluded — its
 //! path structure is not HF-compatible), progress events to the frontend.
 
-use crate::ai::model_lock::{ModelFileInfo, ModelStatus, MODEL_LOCK};
+use crate::ai::model_lock::{model_lock, ModelFileInfo, ModelStatus};
 use crate::error::{AppError, Result};
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -228,8 +228,8 @@ pub async fn ensure_models(model_dir: PathBuf, app: Option<AppHandle>) -> Result
         .build()
         .map_err(|e| AppError::Download(e.to_string()))?;
 
-    let total = MODEL_LOCK.len() as f32;
-    for (i, (name, info)) in MODEL_LOCK.iter().enumerate() {
+    let total = model_lock().len() as f32;
+    for (i, (name, info)) in model_lock().iter().enumerate() {
         let base = i as f32 / total;
         let span = 1.0 / total;
         match verify_file(&model_dir, name, info) {
@@ -246,7 +246,7 @@ pub async fn ensure_models(model_dir: PathBuf, app: Option<AppHandle>) -> Result
     }
 
     // Re-verify everything (ADD.md: all-or-nothing lock).
-    for (name, info) in MODEL_LOCK {
+    for (name, info) in model_lock() {
         if let Err(reason) = verify_file(&model_dir, name, info) {
             return Err(AppError::Model(format!("{name}: {reason}")));
         }
@@ -270,7 +270,7 @@ pub async fn init_models_async(model_dir: PathBuf, app: AppHandle) -> ModelStatu
     use crate::ai::model_lock::ModelStatus;
     if !mark_downloading() {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        return if MODEL_LOCK.iter().all(|(n, i)| verify_file(&model_dir, n, i).is_ok()) {
+        return if model_lock().iter().all(|(n, i)| verify_file(&model_dir, n, i).is_ok()) {
             ModelStatus::Locked("cpu".to_string())
         } else {
             ModelStatus::Degraded("models not ready".to_string())

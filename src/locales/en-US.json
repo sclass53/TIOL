@@ -91,7 +91,7 @@
     "aiAuto": "Auto",
     "aiGpu": "GPU",
     "aiCpu": "CPU",
-    "aiMlx": "Apple MLX",
+    "aiCoreml": "Apple CoreML",
     "debug": "Debug mode",
     "tags": "Custom tags",
     "tagsHint": "Zero-shot AI recognition, no training; new tags apply to untagged photos immediately",

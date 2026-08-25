@@ -91,7 +91,7 @@
     "aiAuto": "自动",
     "aiGpu": "GPU",
     "aiCpu": "CPU",
-    "aiMlx": "Apple MLX",
+    "aiCoreml": "Apple CoreML",
     "debug": "调试模式",
     "tags": "自定义标签",
     "tagsHint": "AI 零样本识别，无需训练；新标签立即对未标记照片生效",

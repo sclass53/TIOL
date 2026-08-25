@@ -112,6 +112,19 @@
 
 **修复**：CI 的 macOS onnxruntime 升级到 **1.20.1**（`onnxruntime-osx-universal2-1.20.1.tgz`，universal2 + CoreML EP）；BUILD.md §2 明确标注"必须 ≥ 1.17（推荐 1.20.x）"。**本地 macOS 构建的用户也需更换 ≥1.17 的 dylib**（当前 1.16.3 直接报 BadVersion）。
 
+## C-11.14 · 2025-07 — macOS 全链路修复：fp16 模型 + CoreML 选项 + 图优化降级
+
+**背景**：macOS 上 CPU 回退也报 `ConvInteger(10)`——**Apple Silicon 的官方 ORT CPU EP 没有 ConvInteger 内核**（MLAS 量化卷积在 ARM64 macOS 缺失），int8 模型在 macOS 上根本无法运行。
+
+**修复**（全套）：
+
+1. **模型平台化**：`MODEL_LOCK` → `model_lock()` 按平台返回——macOS 用 **fp16**（vision 186MB + text 564MB + tokenizer ≈ 784MB，哈希已锁定：`a1959f7b...` / `711da56a...`）；Windows/Linux 保持 int8（412MB）。`engine.rs` 按平台选模型文件。
+2. **图优化 Level1**：fp16 导出的 `InsertedPrecisionFreeCast` 节点会让 1.20.x/1.27 的 LayerNorm 高级融合崩溃（`GetIndexFromName ... does not exist`；Python ORT 1.28 已修）。`build_session` 全局降到 **Level1 基础优化**——任何版本安全，int8 路径回归验证无损失（coffee=0.119 正常）。
+3. **onnxruntime 1.20.1 → 1.28.1**：新版已改为分架构打包（`onnxruntime-osx-arm64-1.28.1.tgz`，30MB）——1.28 修复了融合 bug，且与 Windows DLL（1.27）同代。Intel Mac 不在支持范围（.app 仅 arm64）。
+4. **MLX 选项 → CoreML 选项**：fp16 模型让 CoreML 可行（CoreML 支持 fp16/fp32、不支持 int8 量化）——设置页删除 "Apple MLX"，新增 **"Apple CoreML"**（`coreml` provider：macOS 走 CoreML EP，构建失败自动回退 CPU，不预探测避免首次编译卡顿）；i18n 同步。
+5. **fp16 管道验证**：新增 `fp16_pipeline_check`（本机 CPU 直接验证 fp16 图加载 + 预处理 + pooler 提取 + 余弦尺度，sim=0.135 通过）——无需 Mac 即可确认管道正确。
+6. 附带：`.gitignore` 增加 `models-fp16-dl/`（fp16 暂存目录）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。

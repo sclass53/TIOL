@@ -47,11 +47,18 @@ fn extract_pooled(outputs: &ort::session::SessionOutputs) -> Result<(Vec<usize>,
 }
 
 /// Build a session with the given execution providers.
+/// Optimization level Level1 (basic): Level2+ LayerNorm fusion crashes on
+/// the fp16 exports with several ORT versions ("GetIndexFromName ... does
+/// not exist: InsertedPrecisionFreeCast...", C-11.14). Basic rewrites keep
+/// correctness everywhere at negligible perf cost for these small models.
 fn build_session(
     model_path: &Path,
     providers: &[ort::ep::ExecutionProviderDispatch],
 ) -> Result<Session> {
+    use ort::session::builder::GraphOptimizationLevel;
     Session::builder()
+        .map_err(|e| AppError::Ai(e.to_string()))?
+        .with_optimization_level(GraphOptimizationLevel::Level1)
         .map_err(|e| AppError::Ai(e.to_string()))?
         .with_execution_providers(providers)
         .map_err(|e| AppError::Ai(e.to_string()))?
@@ -78,11 +85,11 @@ fn platform_gpu_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
     }
 }
 
-/// Apple accelerator providers for the "mlx" mode (Apple MLX). ort 2.0.0-rc.13
-/// ships no MLX execution provider yet, so CoreML — Apple's other native
-/// accelerator — is used on macOS; empty on every other platform (caller
-/// falls back to CPU with an honest label).
-fn apple_accel_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
+/// Apple accelerator providers for the "coreml" mode. CoreML is Apple's
+/// production accelerator (Neural Engine) and supports fp16/fp32 models —
+/// which is why macOS uses fp16 (C-11.14). Empty on other platforms (the
+/// caller falls back to CPU with an honest label).
+fn coreml_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
     #[cfg(target_os = "macos")]
     {
         vec![ort::ep::CoreML::default().build()]
@@ -99,13 +106,12 @@ fn apple_accel_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
 fn detect_backend(probe_model: &Path) -> (Vec<ort::ep::ExecutionProviderDispatch>, &'static str) {
     #[cfg(target_os = "macos")]
     {
-        // The int8 vision model's quantized ops (ConvInteger) are not
-        // supported by CoreML EP, and probing it can STALL on the first
-        // CoreML model compilation — observed as "engine never loads" on
-        // macOS (C-11.10). Default to CPU; CoreML stays available through
-        // the explicit "gpu" / "mlx" modes (with CPU fallback in load()).
+        // Probing CoreML can STALL on the first model compilation (observed
+        // as "engine never loads" on macOS, C-11.10). Keep auto on CPU for
+        // stability; CoreML stays available through the explicit "gpu" /
+        // "coreml" modes (fp16 models; build failures fall back to CPU).
         let _ = probe_model;
-        log::info!("auto backend on macOS -> cpu (int8 model; CoreML via explicit gpu/mlx)");
+        log::info!("auto backend on macOS -> cpu (fp16 models; CoreML via explicit gpu/coreml)");
         return (vec![ort::ep::CPU::default().build()], "cpu");
     }
     #[cfg(not(target_os = "macos"))]
@@ -147,24 +153,36 @@ fn probe_works(model_path: &Path, provider: &ort::ep::ExecutionProviderDispatch)
     }
 }
 
+/// Platform model files (C-11.14): macOS uses fp16 (ARM64 ORT CPU EP has no
+/// ConvInteger kernels, so int8 cannot run there); everything else uses int8.
+#[cfg(target_os = "macos")]
+const VISION_MODEL: &str = "vision_model_fp16.onnx";
+#[cfg(target_os = "macos")]
+const TEXT_MODEL: &str = "text_model_fp16.onnx";
+#[cfg(not(target_os = "macos"))]
+const VISION_MODEL: &str = "vision_model_int8.onnx";
+#[cfg(not(target_os = "macos"))]
+const TEXT_MODEL: &str = "text_model_int8.onnx";
+
 impl AIEngine {
     /// Build sessions from a verified model directory (all-or-nothing).
     /// `mode`: "auto" (detect), "gpu" (GPU only), "cpu" (CPU only).
     /// Returns the engine plus the active backend label.
     pub fn load(model_dir: &Path, mode: &str) -> Result<(Self, String)> {
-        let vision_path = model_dir.join("vision_model_int8.onnx");
+        let vision_path = model_dir.join(VISION_MODEL);
         let (providers, label) = match mode {
             "gpu" => (platform_gpu_providers(), "gpu"),
             "cpu" => (vec![ort::ep::CPU::default().build()], "cpu"),
-            "mlx" => {
-                let providers = apple_accel_providers();
-                if providers.is_empty() || !probe_works(&vision_path, &providers[0]) {
-                    log::warn!(
-                        "Apple MLX backend unavailable on this machine — falling back to CPU"
-                    );
+            "coreml" => {
+                // No pre-probe: CoreML's first model compile can stall, and
+                // load() already falls back to CPU if the build fails
+                // (C-11.14).
+                let providers = coreml_providers();
+                if providers.is_empty() {
+                    log::warn!("CoreML backend unavailable on this platform — falling back to CPU");
                     (vec![ort::ep::CPU::default().build()], "cpu")
                 } else {
-                    (providers, "mlx")
+                    (providers, "coreml")
                 }
             }
             _ => detect_backend(&vision_path),
@@ -182,11 +200,12 @@ impl AIEngine {
                     .map_err(|e| AppError::Ai(format!("vision: {e}")))?
             }
         };
-        let text = match build_session(&model_dir.join("text_model_int8.onnx"), &providers) {
+        let text_path = model_dir.join(TEXT_MODEL);
+        let text = match build_session(&text_path, &providers) {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("text session build failed ({e}) — falling back to CPU");
-                build_session(&model_dir.join("text_model_int8.onnx"), &cpu_only)
+                build_session(&text_path, &cpu_only)
                     .map_err(|e| AppError::Ai(format!("text: {e}")))?
             }
         };
@@ -484,5 +503,77 @@ mod tests {
         // scale: descriptive matches score ~0.09-0.13, noise < 0.08.
         assert!(!scores.is_empty());
         assert!(scores[0].1 > 0.08, "top tag score too low: {:?}", scores[0]);
+    }
+
+    /// fp16 pipeline check (macOS models, C-11.14): loads the fp16 vision +
+    /// text graphs directly (any platform with a >=1.17 ORT), runs one image
+    /// + one text through OUR preprocessing/pooling, and sanity-checks dims
+    /// and cosine scale. Validates the fp16 path without needing a Mac.
+    #[test]
+    #[ignore = "requires fp16 models (models-fp16-dl)"]
+    fn fp16_pipeline_check() {
+        let dir = std::env::var("TIOL_FP16_DIR")
+            .unwrap_or_else(|_| "E:\\ImageManager\\models-fp16-dl".to_string());
+        let base = std::path::Path::new(&dir);
+        let vision =
+            build_session(&base.join("vision_model_fp16.onnx"), &[ort::ep::CPU::default().build()])
+                .expect("fp16 vision build");
+        let text = build_session(
+            &base.join("text_model_fp16.onnx"),
+            &[ort::ep::CPU::default().build()],
+        )
+        .expect("fp16 text build");
+
+        // Image embedding via the shared preprocess + pooler path.
+        let imgs = std::env::var("TIOL_TEST_IMAGES")
+            .unwrap_or_else(|_| "E:\\ImageManager\\test_imgs".to_string());
+        let image = std::fs::read_dir(&imgs)
+            .expect("test images dir")
+            .flatten()
+            .find(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .map(|x| matches!(x.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "webp"))
+                    .unwrap_or(false)
+            })
+            .expect("no image");
+        let data = AIEngine::preprocess_image(&image.path()).expect("preprocess");
+        let tensor = Tensor::from_array((vec![1i64, 3, 224, 224], data)).expect("tensor");
+        let mut vision = vision;
+        let name = vision.inputs()[0].name().to_string();
+        let out = vision.run(ort::inputs![name => tensor]).expect("vision run");
+        let (dims, values) = extract_pooled(&out).expect("extract pooled");
+        let n = dims.last().copied().unwrap_or(0);
+        assert_eq!(n, 768, "fp16 vision pooler dim");
+        let mut img_vec = values[..n].to_vec();
+        normalize(&mut img_vec);
+
+        // Text embedding via the tokenizer + pooler path (mirrors embed_text).
+        let tokenizer = tokenizers::Tokenizer::from_file(base.join("tokenizer.json"))
+            .expect("tokenizer load");
+        let encoding = tokenizer.encode("a cup of coffee", true).expect("encode");
+        let ids: Vec<i64> = encoding.get_ids().iter().map(|t| *t as i64).collect();
+        let seq = ids.len() as i64;
+        let ids_t = Tensor::from_array((vec![1i64, seq], ids)).expect("ids tensor");
+        let mask_t = Tensor::from_array((vec![1i64, seq], vec![1i64; seq as usize]))
+            .expect("mask tensor");
+        let mut text = text;
+        let in0 = text.inputs()[0].name().to_string();
+        let mut ins: Vec<(String, ort::session::SessionInputValue<'_>)> =
+            vec![(in0, ids_t.into())];
+        if text.inputs().len() > 1 {
+            ins.push((text.inputs()[1].name().to_string(), mask_t.into()));
+        }
+        let out = text.run(ins).expect("text run");
+        let (dims, values) = extract_pooled(&out).expect("extract pooled");
+        let n = dims.last().copied().unwrap_or(0);
+        assert_eq!(n, 768, "fp16 text pooler dim");
+        let mut tv = values[..n].to_vec();
+        normalize(&mut tv);
+
+        let sim = cosine(&img_vec, &tv);
+        println!("fp16 pipeline OK — image x 'a cup of coffee' sim = {sim:.3}");
+        assert!(sim > 0.05, "fp16 cosine too low: {sim:.3}");
     }
 }

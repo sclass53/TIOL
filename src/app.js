@@ -213,7 +213,7 @@ els.btnClearTags.addEventListener("click", () => {
 // the queue (grows when new tasks are added, so the badge count follows).
 const modelStatusEl = document.getElementById("model-status");
 const aiProviderOptions = document.getElementById("ai-provider-options");
-let aiProvider = null; // "auto" | "gpu" | "cpu" | "mlx"
+let aiProvider = null; // "auto" | "gpu" | "cpu" | "coreml"
 let modelBaseText = "…"; // status without the inference-progress suffix
 let aiProgress = null; // { done, remaining } | null
 
