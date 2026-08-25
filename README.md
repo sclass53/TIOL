@@ -1,27 +1,36 @@
+<!-- Language Switcher -->
+[![中文](https://img.shields.io/badge/中文-README-blue.svg)](README.zh.md)
+[![English](https://img.shields.io/badge/English-README-blue.svg)](README.md)
+
 # TIOL — AI Local Photo Manager
 
-隐私优先，本地优先的照片管理应用：照片全程留在你自己的硬盘上，AI 推理完全离线运行（SigLIP2 + 用户自定义零样本标签），不需要任何云端服务。
+Privacy-first, local-first photo management. All photos stay on your own hard drive. AI inference runs completely offline (SigLIP2 + user-defined zero-shot labels). No cloud services required.
 
-## 功能
+## Features
 
-- 📁 目录管理：添加/移除照片目录，文件系统监控（新增/修改自动入队处理）
-- 🔍 双路径搜索：**语义搜索**（自然语言，如 "a cup of coffee"）+ **标签搜索**（毫秒级 SQL）
-- 🏷️ 自定义标签：零样本 AI 打标——设置里输入任意标签（中英文均可）
-- 🖥️ 推理后端可选：auto / GPU / CPU / Apple MLX（macOS 走 CoreML，Apple 原生加速）,全本地化推理
-- 🔒 模型锁定：SHA256 校验 + 断点续传 + 国内镜像回退，模型损坏自动修复
+- 📁 **Directory Management**: Add/remove photo directories, file system monitoring (new/modified files are automatically queued for processing)
+- 🔍 **Dual‑path Search**: **Semantic search** (natural language, e.g., *"a cup of coffee"*) + **Tag search** (millisecond SQL)
+- 🏷️ **Custom Labels**: Zero‑shot AI tagging – enter any labels (Chinese or English) in settings
+- 🖥️ **Inference Backend Options**: auto / GPU / CPU / Apple MLX (macOS uses CoreML for native Apple acceleration) – fully local inference
+- 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 依赖：Rust 1.70+、tauri-cli 2.x（macOS 另需 Xcode CLT；Windows 另需 VS Build Tools）
-cargo tauri dev        # 开发模式
-cargo tauri build      # 发布构建（Windows 生成 msi/nsis，macOS 生成 .app/dmg）
+# Dependencies: Rust 1.70+, tauri-cli 2.x (macOS also needs Xcode CLT; Windows needs VS Build Tools)
+cargo tauri dev        # development mode
+cargo tauri build      # production build (Windows → msi/nsis, macOS → .app/dmg)
 ```
 
-首次启动自动下载 AI 模型（约 412MB，hf-mirror → openi → huggingface 镜像链）。
-**Windows 构建/运行前**需把 `vendor/onnxruntime/win-x64/onnxruntime.dll` 复制到可执行文件同目录；**macOS** 需自备 universal2 版 `onnxruntime.dylib`（官方构建含 CoreML EP）——详见 [BUILD.md](BUILD.md)。
+On first launch, the AI model (~412 MB) will be downloaded automatically (mirror chain: hf‑mirror → openi → huggingface).  
+**Before building/running on Windows**, copy `vendor/onnxruntime/win-x64/onnxruntime.dll` to the same directory as the executable.  
+**On macOS**, you need a universal2 `onnxruntime.dylib` (official builds include CoreML EP) – see [BUILD.md](BUILD.md) for details.
 
-## 数据位置
+## Data Locations
 
-- 数据库/缩略图：Windows `%APPDATA%\com.tiol.desktop`；macOS `~/Library/Application Support/com.tiol.desktop`
-- AI 模型：Windows `%LOCALAPPDATA%\com.tiol.desktop\models`；macOS `~/Library/Caches/com.tiol.desktop/models`
+- Database / thumbnails:  
+  Windows: `%APPDATA%\com.tiol.desktop`  
+  macOS: `~/Library/Application Support/com.tiol.desktop`
+- AI models:  
+  Windows: `%LOCALAPPDATA%\com.tiol.desktop\models`  
+  macOS: `~/Library/Caches/com.tiol.desktop/models`
