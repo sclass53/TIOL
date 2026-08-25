@@ -33,9 +33,11 @@ import {
 const els = {
   navPhotos: document.getElementById("nav-photos"),
   navFolders: document.getElementById("nav-folders"),
+  navTags: document.getElementById("nav-tags"),
   navSettings: document.getElementById("nav-settings"),
   viewPhotos: document.getElementById("view-photos"),
   viewFolders: document.getElementById("view-folders"),
+  viewTags: document.getElementById("view-tags"),
   viewSettings: document.getElementById("view-settings"),
   langOptions: document.getElementById("lang-options"),
   toggleHwDecode: document.getElementById("toggle-hw-decode"),
@@ -44,6 +46,8 @@ const els = {
   gpuStatus: document.getElementById("gpu-status"),
   btnClearCache: document.getElementById("btn-clear-cache"),
   btnClearTags: document.getElementById("btn-clear-tags"),
+  btnRunTagging: document.getElementById("btn-run-tagging"),
+  taggingStatus: document.getElementById("tagging-status"),
   cacheHint: document.getElementById("cache-hint"),
   confirmOverlay: document.getElementById("confirm-overlay"),
   confirmText: document.getElementById("confirm-text"),
@@ -78,11 +82,14 @@ const CHUNK_APPEND = 100; // cards appended per scroll fill
 function switchView(name) {
   const isPhotos = name === "photos";
   const isFolders = name === "folders";
+  const isTags = name === "tags";
   els.viewPhotos.classList.toggle("view--hidden", !isPhotos);
   els.viewFolders.classList.toggle("view--hidden", !isFolders);
+  els.viewTags.classList.toggle("view--hidden", !isTags);
   els.viewSettings.classList.toggle("view--hidden", name !== "settings");
   els.navPhotos.classList.toggle("sidebar__btn--active", isPhotos);
   els.navFolders.classList.toggle("sidebar__btn--active", isFolders);
+  els.navTags.classList.toggle("sidebar__btn--active", isTags);
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos) requestAnimationFrame(fillGridIfNeeded);
@@ -96,6 +103,7 @@ els.navPhotos.addEventListener("click", () => {
   }
 });
 els.navFolders.addEventListener("click", () => { switchView("folders"); loadFolders(); });
+els.navTags.addEventListener("click", () => { switchView("tags"); renderTags(); });
 els.navSettings.addEventListener("click", () => { switchView("settings"); renderSettings(); });
 
 // --- settings view ---
@@ -118,7 +126,6 @@ async function renderSettings() {
   detectAndReportRenderer();
   refreshModelStatus();
   renderDebug();
-  renderTags();
   if (aiProvider === null) {
     try {
       aiProvider = (await invoke("get_setting", { key: "ai_provider" })) || "auto";
@@ -197,7 +204,7 @@ els.confirmOverlay.addEventListener("click", (e) => {
 });
 
 els.btnClearTags.addEventListener("click", () => {
-  confirmDialog(t("settings.clearTagsConfirm"), async () => {
+  confirmDialog(t("tags.clearAllConfirm"), async () => {
     try {
       await invoke("clear_all_tags");
       renderTags();
@@ -386,7 +393,7 @@ function stopLogPolling() {
   }
 }
 
-// --- Custom tag management (MIGRATE1.md §2.3: user-defined zero-shot tags) ---
+// --- Custom tag management (Tags tab, C-12) ---
 const tagEls = {
   input: document.getElementById("tag-input"),
   threshold: document.getElementById("tag-threshold"),
@@ -404,23 +411,23 @@ async function renderTags() {
   tagEls.list.textContent = "";
   if (!tags.length) {
     const li = document.createElement("li");
-    li.className = "settings__tag-empty";
-    li.textContent = t("settings.tagsEmpty");
+    li.className = "tags__empty";
+    li.textContent = t("tags.empty");
     tagEls.list.appendChild(li);
     return;
   }
   for (const tg of tags) {
     const li = document.createElement("li");
-    li.className = "settings__tag-item";
+    li.className = "tags__item";
     const name = document.createElement("span");
-    name.className = "settings__tag-name";
+    name.className = "tags__name";
     name.textContent = tg.name;
     const meta = document.createElement("span");
-    meta.className = "settings__tag-meta";
-    meta.textContent = `${t("settings.tagThreshold")}: ${Number(tg.threshold).toFixed(2)} · ${t("settings.tagCount", { count: tg.photo_count })}`;
+    meta.className = "tags__meta";
+    meta.textContent = `${t("tags.tagThreshold")}: ${Number(tg.threshold).toFixed(2)} · ${t("tags.tagCount", { count: tg.photo_count })}`;
     const del = document.createElement("button");
     del.className = "btn btn--ghost";
-    del.textContent = t("settings.removeTag");
+    del.textContent = t("tags.removeTag");
     del.addEventListener("click", async () => {
       try {
         await invoke("delete_custom_tag", { id: tg.id });
@@ -440,7 +447,7 @@ tagEls.add.addEventListener("click", async () => {
   const name = tagEls.input.value.trim();
   const threshold = parseFloat(tagEls.threshold.value) || 0.06;
   if (!name) {
-    alert(t("settings.tagNameRequired"));
+    alert(t("tags.nameRequired"));
     return;
   }
   try {
@@ -453,6 +460,33 @@ tagEls.add.addEventListener("click", async () => {
 });
 tagEls.input.addEventListener("keydown", (e) => {
   if (e.key === "Enter") tagEls.add.click();
+});
+
+// "AI Tagging" (C-12): the ONLY way tagging starts. Queues a full pass over
+// every photo missing any current tag (new tags & new files included).
+let taggingStatusTimer = null;
+els.btnRunTagging.addEventListener("click", async () => {
+  try {
+    const n = await invoke("run_ai_tagging");
+    els.taggingStatus.textContent = t("tags.runStarted", { count: n });
+    els.taggingStatus.hidden = false;
+    clearTimeout(taggingStatusTimer);
+    taggingStatusTimer = setTimeout(() => {
+      els.taggingStatus.hidden = true;
+    }, 6000);
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("no tags defined")) {
+      els.taggingStatus.textContent = t("tags.runNoTags");
+      els.taggingStatus.hidden = false;
+      clearTimeout(taggingStatusTimer);
+      taggingStatusTimer = setTimeout(() => {
+        els.taggingStatus.hidden = true;
+      }, 6000);
+    } else {
+      alert(msg);
+    }
+  }
 });
 
 // --- GPU renderer status (verifies hardware decoding took effect) ---
@@ -1144,6 +1178,8 @@ onLanguageChange(() => {
     renderPhotos(currentPhotos);
   } else if (!els.viewFolders.classList.contains("view--hidden")) {
     if (folderCache) renderFolders(folderCache);
+  } else if (!els.viewTags.classList.contains("view--hidden")) {
+    renderTags();
   } else {
     renderSettings();
   }

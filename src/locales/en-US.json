@@ -5,6 +5,7 @@
   "nav": {
     "photos": "Photos",
     "folders": "Folders",
+    "tags": "Tags",
     "settings": "Settings"
   },
   "search": {
@@ -12,7 +13,7 @@
       "placeholder": "Search for filenames"
     },
     "semantic": {
-      "placeholder": "Semantic search (natural language)… e.g. a photo of a sunset",
+      "placeholder": "Describe the photo you're looking for… e.g. a sunset",
       "error": "Semantic search failed",
       "unavailable": "AI not ready for semantic search"
     },
@@ -44,7 +45,7 @@
   "card": {
     "edit": {
       "title": "Edit tags",
-      "placeholder": "Enter tags, comma-separated (AI tags are added automatically):",
+      "placeholder": "Enter tags, comma-separated (AI tags are added by “AI Tagging”):",
       "save": "Save",
       "cancel": "Cancel"
     }
@@ -67,6 +68,22 @@
     "remaining": "{count} left",
     "indexingRemaining": "{count} left"
   },
+  "tags": {
+    "title": "Custom tags",
+    "hint": "Click “AI Tagging” to tag photos with all current tags — new tags and new photos are included.",
+    "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
+    "tagThreshold": "Threshold",
+    "tagCount": "{count} photos",
+    "addTag": "+ Add",
+    "removeTag": "Remove",
+    "empty": "No tags defined — add a tag, then click “AI Tagging” to start",
+    "nameRequired": "Please enter a tag name",
+    "runButton": "AI Tagging",
+    "runStarted": "{count} photos queued for AI tagging",
+    "runNoTags": "No tags defined yet — add a tag first",
+    "clearAll": "Clear tags",
+    "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"
+  },
   "settings": {
     "title": "Settings",
     "language": "Language",
@@ -79,29 +96,18 @@
     "off": "Off",
     "cacheLabel": "Thumbnail cache",
     "clearCache": "Clear cache",
-    "clearTags": "Clear tags",
-    "clearTagsConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?",
     "cacheCleared": "Cache cleared",
     "modelStatus": "AI models",
     "modelLocked": "Ready",
     "modelDownloading": "Downloading models",
     "modelError": "Model error (AI unavailable)",
-    "aiProgress": "Inferring {done}/{remaining}",
-    "aiProvider": "Inference backend",
+    "aiProgress": "Processing {done}/{remaining}",
+    "aiProvider": "AI engine",
     "aiAuto": "Auto",
     "aiGpu": "GPU",
     "aiCpu": "CPU",
     "aiCoreml": "Apple CoreML",
     "debug": "Debug mode",
-    "tags": "Custom tags",
-    "tagsHint": "Zero-shot AI recognition, no training; new tags apply to untagged photos immediately",
-    "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
-    "tagThreshold": "Threshold",
-    "tagCount": "{count} photos",
-    "addTag": "+ Add",
-    "removeTag": "Remove",
-    "tagsEmpty": "No tags defined — add one and the AI will tag your photos",
-    "tagNameRequired": "Please enter a tag name",
     "gpu": "GPU renderer: {renderer}",
     "gpuSoftware": "(software rendering — hardware acceleration inactive)",
     "gpuUnknown": "GPU renderer: unable to detect"

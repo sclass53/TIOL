@@ -485,24 +485,33 @@ impl Db {
         Ok(())
     }
 
-    /// Files that don't carry the given tag yet (ai_processed=3, so they
-    /// have embeddings) — the target set when a NEW tag is added. Only the
-    /// new tag is evaluated for them (multi-label, no re-checking of
-    /// existing tags).
-    pub fn get_files_without_tag(&self, name: &str, limit: i64) -> Result<Vec<(i64, String)>, String> {
+    /// Files missing AT LEAST ONE currently-defined custom tag (C-12) — the
+    /// target set of the manual "AI Tagging" pass. Includes never-indexed
+    /// files (any ai_processed level): the TagAll task embeds them first.
+    /// Paged via (limit, offset) so large libraries can be enqueued in
+    /// batches. A manual tag with the same name as a custom tag counts as
+    /// covering it (COLLATE NOCASE), same semantics as the old per-tag query.
+    pub fn get_files_missing_any_tag(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<(i64, String)>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
                 "SELECT f.id, COALESCE(f.display_path, f.path) FROM files f
-                 WHERE f.ai_processed = 3 AND NOT EXISTS (
-                   SELECT 1 FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
-                   WHERE ft.file_id = f.id AND t.name = ?1 COLLATE NOCASE
+                 WHERE EXISTS (
+                   SELECT 1 FROM custom_tags ct
+                   WHERE NOT EXISTS (
+                     SELECT 1 FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+                     WHERE ft.file_id = f.id AND t.name = ct.name COLLATE NOCASE
+                   )
                  )
-                 ORDER BY f.id LIMIT ?2",
+                 ORDER BY f.id LIMIT ?1 OFFSET ?2",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![name, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_map(params![limit, offset], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|e| e.to_string())?;
         let mut out = Vec::new();
         for r in rows {
@@ -974,6 +983,51 @@ mod tests {
         assert_eq!(tags[0].name, "mytag");
         db.delete_custom_tag(id).unwrap();
         assert!(db.get_custom_tags().unwrap().is_empty());
+    }
+
+    #[test]
+    fn files_missing_any_tag_semantics() {
+        let (_dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        std::fs::write(folder.path().join("b.jpg"), b"y").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let files = db.get_photos(Some(fid)).unwrap();
+        assert_eq!(files.len(), 2);
+
+        // No tags defined -> nothing is "missing" (the pass requires tags).
+        assert!(db.get_files_missing_any_tag(100, 0).unwrap().is_empty());
+
+        // One tag, only file a tagged -> b is missing it.
+        db.add_custom_tag("cat", &[0.1, 0.2, 0.3], 0.3).unwrap();
+        db.set_file_tags(files[0].id, &[("cat".to_string(), 0.9)], 1).unwrap();
+        let missing = db.get_files_missing_any_tag(100, 0).unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, files[1].id);
+
+        // Tag both -> nothing missing.
+        db.set_file_tags(files[1].id, &[("cat".to_string(), 0.9)], 1).unwrap();
+        assert!(db.get_files_missing_any_tag(100, 0).unwrap().is_empty());
+
+        // Second tag added -> files carrying only the first are missing it
+        // again (multi-label: a file can match several tags).
+        db.add_custom_tag("dog", &[0.1, 0.2, 0.3], 0.3).unwrap();
+        let missing = db.get_files_missing_any_tag(100, 0).unwrap();
+        assert_eq!(missing.len(), 2);
+
+        // Pagination: limit 1 skips one.
+        let page = db.get_files_missing_any_tag(1, 0).unwrap();
+        assert_eq!(page.len(), 1);
+        let page2 = db.get_files_missing_any_tag(1, 1).unwrap();
+        assert_eq!(page2.len(), 1);
+        assert_ne!(page[0].0, page2[0].0);
+
+        // A MANUAL tag with the same name covers the custom tag too.
+        db.set_file_tags(files[0].id, &[("dog".to_string(), 1.0)], 0).unwrap();
+        let missing = db.get_files_missing_any_tag(100, 0).unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, files[1].id);
     }
 
     #[test]

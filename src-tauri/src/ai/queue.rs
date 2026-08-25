@@ -1,8 +1,13 @@
-//! AI task queue (ADD.md §5, MIGRATE1.md V3.0 / C-09): tokio mpsc
-//! (capacity 1000), single consumer. Each task: SigLIP embedding (once) +
-//! match against user-defined tag vectors -> file_tags (or "unknown") ->
-//! ai_processed=3. Retries with 1s/5s/10s backoff, 100ms idle sleep.
-//! Holds tasks while the engine is not ready.
+//! AI task queue (ADD.md §5, MIGRATE1.md V3.0 / C-09, C-12): tokio mpsc
+//! (capacity 1000), single consumer. Tasks come in two kinds (C-12):
+//! - `Index`  (AITask::new): SigLIP embedding only — enqueued for new/changed
+//!   files (startup scan, watcher, add/scan folders). Never touches tags.
+//! - `TagAll` (AITask::tag_all): embedding (once) + match against ALL cached
+//!   user-defined tag vectors -> file_tags (or "unknown") -> ai_processed=3.
+//!   Enqueued only by the manual "AI Tagging" button (run_ai_tagging) for
+//!   files missing at least one current tag.
+//! Retries with 1s/5s/10s backoff, 100ms idle sleep. Holds tasks while the
+//! engine is not ready.
 //!
 //! Folder invalidation: every task carries the queue `epoch` it was enqueued
 //! with. When a folder is removed the epoch is bumped (AIControl::invalidate),
@@ -10,8 +15,8 @@
 //! blocking newer work (the consumer never processes an old-epoch task).
 //!
 //! Resource control: only the shared SigLIP engine runs (on-demand); no
-//! separate tagger model exists anymore. When no user tags are defined the
-//! matching step is skipped entirely (no "unknown" spam on an empty list).
+//! separate tagger model exists anymore. When no user tags are defined a
+//! TagAll pass logs once and only embeds (no "unknown" spam on an empty list).
 
 use crate::ai::engine::{cosine, AIEngine, TagVec};
 use crate::db::Db;
@@ -44,25 +49,34 @@ impl AIControl {
     }
 }
 
+/// What a task should do with the file (C-12): file changes only index
+/// (embed); the manual "AI Tagging" button runs a full tag match.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TaskKind {
+    /// Embed only — new/changed files (startup scan, watcher, add/scan).
+    /// Never writes tags or the "unknown" sentinel.
+    Index,
+    /// Embed (if missing) + match against ALL current tags — the manual
+    /// "AI Tagging" button. Writes hits or "unknown", then ai_processed=3.
+    TagAll,
+}
+
 pub struct AITask {
     pub file_id: i64,
     pub path: String, // display path
     epoch: u64,
-    /// When Some, ONLY this tag is checked against the photo (new-tag flow:
-    /// existing tags are never re-evaluated). None = full tag-list check
-    /// (new/changed files).
-    pub tag: Option<TagVec>,
+    pub kind: TaskKind,
 }
 
 impl AITask {
-    /// Full tag-list check (new/changed files).
+    /// Index-only task (new/changed files): embed, never tag.
     pub fn new(file_id: i64, path: String, epoch: u64) -> Self {
-        Self { file_id, path, epoch, tag: None }
+        Self { file_id, path, epoch, kind: TaskKind::Index }
     }
-    /// Check only the given tag (added later — multi-label without
-    /// re-evaluating existing tags).
-    pub fn with_tag(file_id: i64, path: String, epoch: u64, tag: TagVec) -> Self {
-        Self { file_id, path, epoch, tag: Some(tag) }
+    /// Full tag-list check against every photo missing any current tag
+    /// (the "AI Tagging" button).
+    pub fn tag_all(file_id: i64, path: String, epoch: u64) -> Self {
+        Self { file_id, path, epoch, kind: TaskKind::TagAll }
     }
 }
 
@@ -70,9 +84,9 @@ impl AITask {
 pub struct AiProgress {
     pub done: u64,
     pub remaining: i64,
-    /// True when the current work involves tag matching (user tags exist) —
-    /// false while only embedding/indexing runs (badge shows "Indexing"
-    /// instead of "Tagging", C-11.4).
+    /// True when the CURRENT work involves tag matching (TagAll tasks from
+    /// the "AI Tagging" button) — false while only embedding/indexing runs
+    /// (badge shows "Indexing" instead of "Tagging", C-11.4 / C-12).
     pub tagging: bool,
 }
 
@@ -92,7 +106,11 @@ pub async fn run_consumer(
     // Throttle for the floating progress badge: emit at most every 300ms,
     // but ALWAYS emit when the queue empties (badge hides).
     let mut last_progress = std::time::Instant::now() - Duration::from_secs(1);
-    // Log "embedding only" once per run when no user tags are defined.
+    // Kind of the most recently processed task — drives the badge label
+    // ("Tagging" for TagAll passes, "Indexing" for plain file indexing).
+    // Assigned from the first task before any read.
+    let mut last_tagging;
+    // Log "nothing to tag" once per TagAll pass when no user tags are defined.
     let mut empty_warned = false;
     // Wait for the tag cache to be built ONCE before processing anything:
     // files processed in the gap between engine-ready and cache-ready would
@@ -129,6 +147,7 @@ pub async fn run_consumer(
 
         let mut attempts = 0;
         let delays = [1u64, 5, 10];
+        last_tagging = task.kind == TaskKind::TagAll;
         loop {
             let guard = engine.lock().await;
             let result = match guard.as_ref() {
@@ -163,14 +182,10 @@ pub async fn run_consumer(
             let remaining = rx.len() as i64;
             let emit = remaining == 0 || last_progress.elapsed() >= Duration::from_millis(300);
             if emit {
-                let tagging = !tag_cache
-                    .read()
-                    .map(|g| g.is_empty())
-                    .unwrap_or(true);
                 use tauri::Emitter;
                 let _ = app.emit(
                     "ai-queue-status",
-                    AiProgress { done: processed, remaining, tagging },
+                    AiProgress { done: processed, remaining, tagging: last_tagging },
                 );
                 last_progress = std::time::Instant::now();
             }
@@ -178,9 +193,12 @@ pub async fn run_consumer(
     }
 }
 
-/// One task: SigLIP embedding (skipped when already stored) + user-tag
-/// matching. Files are marked ai_processed=3 when done; a photo that matches
-/// no defined tag gets an "unknown" tag (source=1) so it is never re-detected.
+/// One task. Two kinds (C-12):
+/// - Index: SigLIP embedding only — never touches tags (file changes are
+///   indexed, NOT tagged; tagging is manual via the "AI Tagging" button).
+/// - TagAll: embedding (skipped when stored) + match against ALL cached user
+///   tags; a photo matching nothing gets an "unknown" tag (source=1) so a
+///   later pass knows it was already checked.
 async fn process_one(
     engine: &AIEngine,
     tag_cache: &Arc<std::sync::RwLock<Vec<TagVec>>>,
@@ -190,54 +208,28 @@ async fn process_one(
 ) -> Result<(), String> {
     let path = std::path::Path::new(&task.path);
 
-    // Single-tag check (a tag added later): evaluate ONLY that tag against
-    // the photo. Existing tags are never touched, no "unknown" is written
-    // (the photo may already carry other tags).
-    if let Some(tv) = &task.tag {
-        let vec = match db.get_embedding(task.file_id)? {
-            Some(v) => v,
-            None => match engine.embed_image(path) {
-                Ok(v) => {
-                    db.update_embedding(task.file_id, &v)?;
-                    v
+    // ---- Index: embed only (new/changed files). Existing tags and the
+    // "unknown" sentinel are left exactly as they are.
+    if task.kind == TaskKind::Index {
+        if !db.has_embedding(task.file_id).unwrap_or(false) {
+            match engine.embed_image(path) {
+                Ok(vec) => {
+                    db.update_embedding(task.file_id, &vec)?;
                 }
                 Err(e) => {
                     log::debug!("embed_image failed for {}: {}", task.path, e);
                     db.set_ai_processed(task.file_id, 2)?;
                     return Ok(());
                 }
-            },
-        };
-        let sim = cosine(&vec, &tv.vec);
-        if sim as f64 > tv.threshold {
-            // A real match must displace the "unknown" sentinel (it was
-            // written by an earlier full check) — otherwise the photo ends
-            // up with BOTH the tag and "unknown" (C-10.5).
-            db.clear_unknown_tag(task.file_id)?;
-            db.set_file_tags(task.file_id, &[(tv.name.clone(), sim)], 1)?;
-            log::info!(
-                "tag {} {}: {}={:.3} (new tag)",
-                task.file_id,
-                task.path,
-                tv.name,
-                sim
-            );
-        } else {
-            log::info!(
-                "tag {} {}: {} no match ({:.3} < {})",
-                task.file_id,
-                task.path,
-                tv.name,
-                sim,
-                tv.threshold
-            );
+            }
         }
         db.set_ai_processed(task.file_id, 3)?;
         return Ok(());
     }
 
+    // ---- TagAll: full tag-list check (manual "AI Tagging" button).
     // 1. SigLIP image embedding — skipped when the file already has one
-    // (legacy files re-enqueued for tagging only).
+    // (files re-enqueued for tagging only).
     let mut img_vec: Option<Vec<f32>> = None;
     if !db.has_embedding(task.file_id).unwrap_or(false) {
         match engine.embed_image(path) {
@@ -254,8 +246,8 @@ async fn process_one(
     }
 
     // 2. Match against the cached user-defined tag vectors. No tags defined
-    // -> skip (files stay untagged and are re-enqueued on later startups
-    // until the user defines tags — never spam "unknown" on an empty list).
+    // -> embed only (files stay untagged; a later pass after tags are added
+    // re-enqueues them — never spam "unknown" on an empty list).
     let tagvecs: Vec<TagVec> = match tag_cache.read() {
         Ok(g) => g.clone(),
         Err(_) => Vec::new(),
@@ -309,10 +301,9 @@ async fn process_one(
         }
     } else if !*empty_warned {
         *empty_warned = true;
-        // First launch / no tags yet: embedding only — the file is marked
-        // done WITHOUT any tag check (and without "unknown" spam). Adding a
-        // tag later re-checks it (single-tag flow).
-        log::info!("no user tags defined — embedding only, tagging skipped");
+        // All tags were deleted after this pass was enqueued — mark done
+        // without any tag check (and without "unknown" spam).
+        log::info!("AI tagging: no tags defined — nothing to match");
     }
 
     // 3. Done.

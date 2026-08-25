@@ -418,11 +418,25 @@ html, body {
   align-self: flex-start;
 }
 
-/* Custom tag management (MIGRATE1.md §2.3) */
-.settings__tag-add {
+/* Tags view (C-12) — scrollable within the viewport like the settings view */
+.tags {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tags > * {
+  flex-shrink: 0;
+}
+
+/* Custom tag management (Tags tab, MIGRATE1.md §2.3) */
+.tags__add {
   gap: 8px;
 }
-.settings__tag-input {
+.tags__input {
   flex: 1;
   min-width: 0;
   height: 30px;
@@ -433,7 +447,7 @@ html, body {
   padding: 0 10px;
   outline: none;
 }
-.settings__tag-threshold {
+.tags__threshold {
   width: 88px;
   height: 30px;
   background: var(--bg-surface);
@@ -443,7 +457,7 @@ html, body {
   padding: 0 6px;
   outline: none;
 }
-.settings__tag-list {
+.tags__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -451,7 +465,7 @@ html, body {
   flex-direction: column;
   gap: 6px;
 }
-.settings__tag-item {
+.tags__item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -460,17 +474,17 @@ html, body {
   border: 1px solid var(--bg-elevated);
   border-radius: var(--radius);
 }
-.settings__tag-name {
+.tags__name {
   font-weight: 600;
   font-size: 13px;
   color: var(--text-primary);
 }
-.settings__tag-meta {
+.tags__meta {
   flex: 1;
   color: var(--text-secondary);
   font-size: 12px;
 }
-.settings__tag-empty {
+.tags__empty {
   color: var(--text-secondary);
   font-size: 12px;
   padding: 4px 2px;

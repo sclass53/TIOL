@@ -464,25 +464,10 @@ async fn rebuild_tag_cache(
     log::info!("tag cache: {} tags embedded", tags.len());
 }
 
-/// Enqueue every photo missing the NEWLY added tag, checking ONLY that tag
-/// (existing tags are never re-evaluated — multi-label without the rework).
-fn retag_new_tag(state: &AppState, tag: ai::engine::TagVec) {
-    let db = state.db.clone();
-    let tx = state.ai_queue.clone();
-    let epoch = state.ai_control.epoch();
-    std::thread::spawn(move || {
-        if let Ok(files) = db.get_files_without_tag(&tag.name, 5000) {
-            log::info!("re-enqueueing {} files for new tag {:?}", files.len(), tag.name);
-            for (fid, path) in files {
-                let _ = tx.try_send(ai::queue::AITask::with_tag(fid, path, epoch, tag.clone()));
-            }
-        }
-    });
-}
-
 /// ADD.md §7 / MIGRATE1.md §2.2: add a USER-DEFINED text tag. Its text
-/// embedding (SigLIP) is stored in custom_tags and cached in memory; photos
-/// are tagged when their image vector matches above the tag threshold.
+/// embedding (SigLIP) is stored in custom_tags and cached in memory.
+/// Adding a tag NEVER starts tagging (C-12): the manual "AI Tagging"
+/// button (run_ai_tagging) matches every photo against ALL current tags.
 #[tauri::command]
 async fn add_custom_tag(
     state: tauri::State<'_, AppState>,
@@ -504,14 +489,9 @@ async fn add_custom_tag(
     let vec = engine.embed_text(&name).map_err(|e| e.to_string())?;
     drop(guard);
     let id = state.db.add_custom_tag(&name, &vec, threshold)?;
-    // Refresh the cache, then check the NEW tag against every photo that
-    // doesn't have it yet (existing tags are left untouched).
+    // Refresh the in-memory tag-vector cache only — no tagging tasks are
+    // enqueued here; the user triggers the full pass via "AI Tagging".
     rebuild_tag_cache(state.db.clone(), state.ai_engine.clone(), state.tag_cache.clone()).await;
-    if let Ok(cache) = state.tag_cache.read() {
-        if let Some(tv) = cache.iter().find(|t| t.name.eq_ignore_ascii_case(&name)) {
-            retag_new_tag(&state, tv.clone());
-        }
-    }
     Ok(id)
 }
 
@@ -546,6 +526,57 @@ async fn clear_all_tags(state: tauri::State<'_, AppState>) -> Result<(), String>
 #[tauri::command]
 fn get_custom_tags(state: tauri::State<AppState>) -> Result<Vec<db::CustomTag>, String> {
     state.db.get_custom_tags()
+}
+
+/// Manual "AI Tagging" (C-12): the ONLY way tagging starts. Enqueues a
+/// full tag-list check (AITask::tag_all) for every file missing at least
+/// one currently-defined custom tag — this covers newly added tags AND
+/// files that were only indexed (or never indexed) since the last pass.
+/// Returns how many files were queued.
+#[tauri::command]
+async fn run_ai_tagging(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    if state.db.get_custom_tags()?.is_empty() {
+        log::info!("run_ai_tagging: no tags defined — nothing to do");
+        return Err("no tags defined".to_string());
+    }
+    let db = state.db.clone();
+    let tx = state.ai_queue.clone();
+    let epoch = state.ai_control.epoch();
+    tauri::async_runtime::spawn_blocking(move || -> Result<usize, String> {
+        let mut enqueued = 0usize;
+        let mut offset = 0i64;
+        loop {
+            let batch = db.get_files_missing_any_tag(5000, offset)?;
+            if batch.is_empty() {
+                break;
+            }
+            for (fid, path) in &batch {
+                let mut task = ai::queue::AITask::tag_all(*fid, path.clone(), epoch);
+                // The channel (capacity 1000) can fill up while the consumer
+                // waits for the engine — retry until space frees, so one
+                // click never silently drops files from the pass.
+                loop {
+                    match tx.try_send(task) {
+                        Ok(()) => break,
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(t)) => {
+                            task = t; // got the task back — sleep and retry
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                            log::warn!("run_ai_tagging: AI queue closed — aborting enqueue");
+                            return Ok(enqueued);
+                        }
+                    }
+                }
+                enqueued += 1;
+            }
+            offset += batch.len() as i64;
+        }
+        log::info!("AI tagging: enqueued {enqueued} files");
+        Ok(enqueued)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1035,11 +1066,11 @@ fn main() {
                             let _ = tx.try_send(ai::queue::AITask::new(fid, path, epoch));
                         }
                     }
-                    // NOTE: no full-library re-tag at startup (C-10.3) — only
-                    // files the scanner detected as changed/new (ai_processed
-                    // reset to 0 above) are re-processed. Existing photos are
-                    // touched again only when a NEW tag is added (single-tag
-                    // check) or the file itself changes.
+                    // NOTE: startup enqueues are INDEX tasks only (C-12) —
+                    // file changes are embedded, never tagged. Tagging runs
+                    // exclusively from the manual "AI Tagging" button
+                    // (run_ai_tagging), which re-checks every file missing
+                    // any current tag (new tags + new files included).
                     spawn_thumb_prewarm(prewarm_dir, db_clone);
                 });
             }
@@ -1070,6 +1101,7 @@ fn main() {
             add_custom_tag,
             delete_custom_tag,
             get_custom_tags,
+            run_ai_tagging,
             clear_all_tags,
             get_ai_status,
             set_ai_provider,

@@ -11,6 +11,7 @@
     <nav class="sidebar" aria-label="Menu">
       <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos">📷</button>
       <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders">📁</button>
+      <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags">🏷️</button>
       <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings">⚙</button>
     </nav>
 
@@ -39,6 +40,27 @@
         <div class="statusbar" id="folder-status">0 folders</div>
       </section>
 
+      <!-- Tags view (C-12: tag management + manual AI Tagging) -->
+      <section class="view view--hidden" id="view-tags">
+        <div class="toolbar">
+          <button class="btn btn--primary" id="btn-run-tagging" data-i18n="tags.runButton">⚡ AI 标记</button>
+          <button class="btn btn--ghost" id="btn-clear-tags" data-i18n="tags.clearAll">清除标记</button>
+        </div>
+        <div class="tags">
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="tags.title">自定义标签</span>
+            <span class="settings__hint" data-i18n="tags.hint"></span>
+          </div>
+          <div class="settings__row tags__add">
+            <input class="tags__input" id="tag-input" type="text" data-i18n-placeholder="tags.tagPlaceholder" />
+            <input class="tags__threshold" id="tag-threshold" type="number" min="0.01" max="0.5" step="0.01" value="0.06" data-i18n-title="tags.tagThreshold" />
+            <button class="btn btn--ghost" id="btn-add-tag" data-i18n="tags.addTag">+ 添加</button>
+          </div>
+          <ul class="tags__list" id="tag-list"></ul>
+          <div class="settings__hint" id="tagging-status" hidden></div>
+        </div>
+      </section>
+
       <!-- Settings view -->
       <section class="view view--hidden" id="view-settings">
         <div class="settings">
@@ -57,10 +79,9 @@
           <div class="settings__row">
             <span class="settings__label" data-i18n="settings.cacheLabel">缩略图缓存</span>
             <button class="btn btn--ghost" id="btn-clear-cache" data-i18n="settings.clearCache">清除缓存</button>
-            <button class="btn btn--ghost" id="btn-clear-tags" data-i18n="settings.clearTags">清除标记</button>
           </div>
           <div class="settings__row">
-            <span class="settings__label" data-i18n="settings.aiProvider">推理后端</span>
+            <span class="settings__label" data-i18n="settings.aiProvider">AI 引擎</span>
             <div class="settings__langs" id="ai-provider-options">
               <button class="btn btn--ghost" data-provider="auto" data-i18n="settings.aiAuto">自动</button>
               <button class="btn btn--ghost" data-provider="gpu" data-i18n="settings.aiGpu">GPU</button>
@@ -68,16 +89,6 @@
               <button class="btn btn--ghost" data-provider="coreml" data-i18n="settings.aiCoreml">Apple CoreML</button>
             </div>
           </div>
-          <div class="settings__row">
-            <span class="settings__label" data-i18n="settings.tags">自定义标签</span>
-            <span class="settings__hint" data-i18n="settings.tagsHint">AI 自动识别，无需训练</span>
-          </div>
-          <div class="settings__row settings__tag-add">
-            <input class="settings__tag-input" id="tag-input" type="text" data-i18n-placeholder="settings.tagPlaceholder" />
-            <input class="settings__tag-threshold" id="tag-threshold" type="number" min="0.01" max="0.5" step="0.01" value="0.06" data-i18n-title="settings.tagThreshold" />
-            <button class="btn btn--ghost" id="btn-add-tag" data-i18n="settings.addTag">+ 添加</button>
-          </div>
-          <ul class="settings__tag-list" id="tag-list"></ul>
           <div class="settings__row">
             <span class="settings__label" data-i18n="settings.modelStatus">AI 模型</span>
             <span class="settings__hint" id="model-status">…</span>

@@ -8,6 +8,7 @@ export const MESSAGES = {
     "nav": {
       "photos": "照片",
       "folders": "目录",
+      "tags": "标签",
       "settings": "设置"
     },
     "search": {
@@ -15,7 +16,7 @@ export const MESSAGES = {
         "placeholder": "搜索文件名"
       },
       "semantic": {
-        "placeholder": "语义搜索（自然语言）… 例如：一张日落的照片",
+        "placeholder": "用一句话描述要找的照片… 例如：一张日落的照片",
         "error": "语义搜索失败",
         "unavailable": "AI 尚未就绪，无法语义搜索"
       },
@@ -47,7 +48,7 @@ export const MESSAGES = {
     "card": {
       "edit": {
         "title": "编辑标签",
-        "placeholder": "输入标签，用逗号分隔（AI 标签自动生成）：",
+        "placeholder": "输入标签，用逗号分隔（AI 标签由「AI 标记」添加）：",
         "save": "保存",
         "cancel": "取消"
       }
@@ -70,6 +71,22 @@ export const MESSAGES = {
       "remaining": "剩余 {count} 张",
       "indexingRemaining": "剩余 {count} 张"
     },
+    "tags": {
+      "title": "自定义标签",
+      "hint": "点击「AI 标记」按全部当前标签为照片打标——新增标签与新增照片都会包含。",
+      "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
+      "tagThreshold": "匹配阈值",
+      "tagCount": "{count} 张",
+      "addTag": "+ 添加",
+      "removeTag": "删除",
+      "empty": "尚未定义标签 — 添加标签后点击「AI 标记」开始打标",
+      "nameRequired": "请输入标签名称",
+      "runButton": "AI 标记",
+      "runStarted": "已为 {count} 张照片排队打标",
+      "runNoTags": "尚未定义标签 — 请先添加标签",
+      "clearAll": "清除标记",
+      "clearAllConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？"
+    },
     "settings": {
       "title": "设置",
       "language": "语言",
@@ -82,29 +99,18 @@ export const MESSAGES = {
       "off": "关",
       "cacheLabel": "缩略图缓存",
       "clearCache": "清除缓存",
-      "clearTags": "清除标记",
-      "clearTagsConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？",
       "cacheCleared": "缓存已清除",
       "modelStatus": "AI 模型",
       "modelLocked": "已就绪",
       "modelDownloading": "正在下载模型",
       "modelError": "模型异常（AI 功能不可用）",
-      "aiProgress": "推理中 {done}/{remaining}",
-      "aiProvider": "推理后端",
+      "aiProgress": "处理中 {done}/{remaining}",
+      "aiProvider": "AI 引擎",
       "aiAuto": "自动",
       "aiGpu": "GPU",
       "aiCpu": "CPU",
       "aiCoreml": "Apple CoreML",
       "debug": "调试模式",
-      "tags": "自定义标签",
-      "tagsHint": "AI 零样本识别，无需训练；新标签立即对未标记照片生效",
-      "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
-      "tagThreshold": "匹配阈值",
-      "tagCount": "{count} 张",
-      "addTag": "+ 添加",
-      "removeTag": "删除",
-      "tagsEmpty": "尚未定义标签 — 添加后 AI 会自动为照片打标签",
-      "tagNameRequired": "请输入标签名称",
       "gpu": "GPU 渲染器：{renderer}",
       "gpuSoftware": "（软件渲染 — 硬件加速未生效）",
       "gpuUnknown": "GPU 渲染器：无法检测"
@@ -117,6 +123,7 @@ export const MESSAGES = {
     "nav": {
       "photos": "Photos",
       "folders": "Folders",
+      "tags": "Tags",
       "settings": "Settings"
     },
     "search": {
@@ -124,7 +131,7 @@ export const MESSAGES = {
         "placeholder": "Search for filenames"
       },
       "semantic": {
-        "placeholder": "Semantic search (natural language)… e.g. a photo of a sunset",
+        "placeholder": "Describe the photo you're looking for… e.g. a sunset",
         "error": "Semantic search failed",
         "unavailable": "AI not ready for semantic search"
       },
@@ -156,7 +163,7 @@ export const MESSAGES = {
     "card": {
       "edit": {
         "title": "Edit tags",
-        "placeholder": "Enter tags, comma-separated (AI tags are added automatically):",
+        "placeholder": "Enter tags, comma-separated (AI tags are added by “AI Tagging”):",
         "save": "Save",
         "cancel": "Cancel"
       }
@@ -179,6 +186,22 @@ export const MESSAGES = {
       "remaining": "{count} left",
       "indexingRemaining": "{count} left"
     },
+    "tags": {
+      "title": "Custom tags",
+      "hint": "Click “AI Tagging” to tag photos with all current tags — new tags and new photos are included.",
+      "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
+      "tagThreshold": "Threshold",
+      "tagCount": "{count} photos",
+      "addTag": "+ Add",
+      "removeTag": "Remove",
+      "empty": "No tags defined — add a tag, then click “AI Tagging” to start",
+      "nameRequired": "Please enter a tag name",
+      "runButton": "AI Tagging",
+      "runStarted": "{count} photos queued for AI tagging",
+      "runNoTags": "No tags defined yet — add a tag first",
+      "clearAll": "Clear tags",
+      "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"
+    },
     "settings": {
       "title": "Settings",
       "language": "Language",
@@ -191,29 +214,18 @@ export const MESSAGES = {
       "off": "Off",
       "cacheLabel": "Thumbnail cache",
       "clearCache": "Clear cache",
-      "clearTags": "Clear tags",
-      "clearTagsConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?",
       "cacheCleared": "Cache cleared",
       "modelStatus": "AI models",
       "modelLocked": "Ready",
       "modelDownloading": "Downloading models",
       "modelError": "Model error (AI unavailable)",
-      "aiProgress": "Inferring {done}/{remaining}",
-      "aiProvider": "Inference backend",
+      "aiProgress": "Processing {done}/{remaining}",
+      "aiProvider": "AI engine",
       "aiAuto": "Auto",
       "aiGpu": "GPU",
       "aiCpu": "CPU",
       "aiCoreml": "Apple CoreML",
       "debug": "Debug mode",
-      "tags": "Custom tags",
-      "tagsHint": "Zero-shot AI recognition, no training; new tags apply to untagged photos immediately",
-      "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
-      "tagThreshold": "Threshold",
-      "tagCount": "{count} photos",
-      "addTag": "+ Add",
-      "removeTag": "Remove",
-      "tagsEmpty": "No tags defined — add one and the AI will tag your photos",
-      "tagNameRequired": "Please enter a tag name",
       "gpu": "GPU renderer: {renderer}",
       "gpuSoftware": "(software rendering — hardware acceleration inactive)",
       "gpuUnknown": "GPU renderer: unable to detect"

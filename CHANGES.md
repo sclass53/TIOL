@@ -3,6 +3,24 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-12 · 2025-07 — 标签独立页签 + 手动打标（AI Tagging 按钮）
+
+**需求**：① 标签功能从设置页移到独立"标签"页签（侧栏变 4 个：照片 / 目录 / 标签 / 设置）；② 打标改为**手动触发**——文件增删/变更只做索引（嵌入），添加/删除标签不再自动打标；只有点「AI 标记」按钮才按**全部当前标签**为照片打标（覆盖新增标签与新增/未标记文件）。
+
+**实现**：
+
+1. **任务类型化**（`queue.rs`）：`AITask` 新增 `kind: TaskKind`——`Index`（仅嵌入，不碰任何标签/unknown）与 `TagAll`（嵌入 + 全量标签匹配 + unknown 哨兵）。所有文件变更入队点（启动扫描 / watcher / add_folder / scan_folders / process_file）继续用 `AITask::new` → 自动变为纯索引；删除单标签任务（`with_tag`）与单标签分支。
+2. **手动打标命令**（`main.rs`）：新增 `run_ai_tagging`——无标签定义时直接报错；否则分页查询 `get_files_missing_any_tag(5000, offset)`（**缺少任一当前自定义标签**的文件，含从未索引的新文件；手动标签与自定义标签同名视为已覆盖）逐页入队 `AITask::tag_all`；队列满（容量 1000）时 100ms 重试，杜绝一次点击丢任务；返回实际入队数供前端提示。
+3. **移除自动打标链**：`retag_new_tag` / `AITask::with_tag` / `get_files_without_tag` / `add_custom_tag` 里的入队逻辑全部删除——加标签只重建向量缓存。C-10.3/10.5 的"新标签自动单标签检查"语义被本版本取代。
+4. **浮窗文案按任务类型**：`AiProgress.tagging` 由"标签缓存非空"改为**最近处理任务的 kind**——索引任务显示"正在索引"，打标任务显示"正在标记中"。
+5. **前端 4 页签**：新增 `view-tags`（工具条：⚡ AI 标记 + 清除标记（含确认）；标签添加行/列表/阈值/命中数；入队结果提示行 `#tagging-status`）；设置页删除全部标签区块与"清除标记"按钮；样式 `.settings__tag-*` 重命名为 `.tags__*`，新增 `.tags` 滚动容器。
+6. **i18n**：新增 `nav.tags` 与 `tags.*` 命名空间（自 `settings.*` 迁移并改写 hint/empty 文案——"添加标签不会自动打标，点 AI 标记开始"），`messages.js` 重新生成。
+7. **用户向文案去术语**：移除用户可见文本中的算法术语——"Zero-shot AI recognition, no training"（tags.hint）、"(natural language)"（搜索占位）、"Inference backend"→"AI 引擎"、"Inferring"→"Processing/处理中"；修正编辑对话框过时文案"AI 标签自动生成"→"AI 标签由「AI 标记」添加"（C-12 后打标已改手动）；README 同步。
+8. **单测**：新增 `files_missing_any_tag_semantics`（单标签/全覆盖/多标签缺一/分页/手动同名覆盖），与既有 6 项一起通过。
+
+**行为对照**：文件变更 → 自动索引（嵌入，不动标签）✓；加标签 → 只更新定义 ✓；删标签 → 立即从照片移除（原有）✓；点「AI 标记」→ 全量打标（命中写标签、全不中写 unknown，浮窗显示进度，完成后卡片/计数刷新）✓；无标签点按钮 → 提示"请先添加标签"。
+
+
 ## C-11 · 2025-07 — GitHub Actions 跨平台 CI 构建
 
 **需求**：无需本地 Mac，通过 GitHub Actions 编译 macOS（及 Windows）发布版。
