@@ -66,8 +66,23 @@
 **便携包内容（功能完整）**：Windows zip = tiol.exe + onnxruntime.dll + README；macOS zip = TIOL.app（dylib 已内嵌 Contents/MacOS 并 ad-hoc 签名）。安装包（msi/nsis）仍不内嵌 ORT（已知缺口，见 C-11）。
 
 ## C-11.6 · 2025-07 — CI 修复：tauri-action 需要 npm install
-
 **CI 首跑失败**：`tauri-action` 通过前端包管理器调用 `npm run tauri build`，而 CI 从未执行 `npm install` → `'tauri' is not recognized`（Win）/ `tauri: command not found`（macOS）。修复：两个 job 在 tauri-action 前增加 `npm install` 步骤（`@tauri-apps/cli ^2.11.4` 在 devDependencies，仅用于 CLI 二进制；前端本身无依赖）。
+
+## C-11.7 · 2025-07 — 视频忽略 / macOS 启动自愈（i18n 重试 + 引擎看门狗）
+
+**① 忽略视频**：scanner 的 ALLOWED_EXTS 移除 `mp4/mov/avi/mkv`——AI 管道与缩略图仅支持图像，视频不应入库（此前会被尝试嵌入→失败标记）。已入库的视频行会在下次扫描时自动清除（不再出现在 seen 集合 → delete_missing）。
+
+**② macOS 语义搜索无结果/嵌入未开始**：最可能原因 = 引擎加载失败（dylib 缺失/CoreML 首次编译等）→ 消费者无限等待引擎 → 队列永不处理。修复：**引擎看门狗**——模型已验证后每 30s 重试加载（最多 10 分钟），瞬时失败自愈；`pin_ort_dylib` 启动即输出 dylib 存在性（缺失会打警告），配合设置页模型状态/调试日志可精确定位。若 macOS 上仍不工作，请提供调试日志（会明确显示 dylib 缺失或引擎加载错误原因）。
+
+**③ macOS 启动时按钮显示 i18n 键名（如 folders.add）**：初始 `fetch(locales/xx.json)` 偶发失败 → messages 为空 → `t()` 返回键名；手动点语言后重新 fetch 成功。修复：`loadMessages` 重试 4 次（300ms 退避）；`initI18n` 初始失败后**后台每 2s 自愈重试**（≤40s），成功即重新应用文案，无需用户手动切换。
+
+## C-11.8 · 2025-07 — 自动发布 Release
+
+**需求**：打 tag 时自动发布 GitHub Release。
+
+**实现**：① workflow 顶层加 `permissions: contents: write`；② 两个 job 的 tauri-action 启用 `tagName/releaseName = v__VERSION__`（用 `startsWith(github.ref,'refs/tags/')` 表达式门控——**只有 tag 推送才建 Release**，main 推送仍仅构建；`__VERSION__` 占位符由 tauri-action 替换为 tauri.conf.json 的 version）；③ `releaseDraft: true`（草稿，人工确认后发布）；④ 双 job 共用同一 tagName → Windows 与 macOS 的产物自动汇入**同一个 Release**；⑤ 便携包（Windows zip / macOS zip）用 `softprops/action-gh-release` 附加（同样 tag 门控）。
+
+**使用**：`git tag v0.1.0 && git push origin v0.1.0` → CI 完成后 GitHub Releases 页出现草稿（含 msi/nsis/.app + 两个便携 zip）→ 人工点 Publish 正式发布。
 
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 

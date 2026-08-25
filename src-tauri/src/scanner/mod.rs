@@ -6,7 +6,8 @@ use walkdir::WalkDir;
 
 const ALLOWED_EXTS: &[&str] = &[
     "jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "tif", "heic", "heif", "raw",
-    "mp4", "mov", "avi", "mkv",
+    // Videos (.mp4/.mov/...) are intentionally NOT included — the AI pipeline
+    // (SigLIP embedding/tagging) and thumbnails are image-only (C-11.7).
 ];
 
 fn is_allowed(path: &Path) -> bool {

@@ -2,7 +2,8 @@
 #
 # Triggers:
 #   - push to main      : build only (artifacts)
-#   - tag v*            : build + draft GitHub Release
+#   - tag v*            : build + create DRAFT GitHub Release with all
+#                         installers and portable zips (publish manually)
 #   - manual dispatch   : build only
 #
 # Notes:
@@ -26,6 +27,10 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+
+# Releases (draft creation + asset upload) need write access.
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,10 +62,13 @@ jobs:
         with:
           # Unsigned build; add secrets + signing inputs when distributing.
           args: --bundles msi,nsis
-          # tagName: v__VERSION__
-          # releaseName: "TIOL v__VERSION__"
-          # releaseDraft: true
-          # prerelease: false
+          # Release only on tag pushes (empty expressions otherwise -> build
+          # only). Both jobs share the same tagName, so the two platforms
+          # upload their assets into ONE release (C-11.8).
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && 'v__VERSION__' || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && 'TIOL v__VERSION__' || '' }}
+          releaseDraft: true
+          prerelease: false
 
       - name: Assemble portable folder (exe + onnxruntime.dll)
         shell: pwsh
@@ -79,6 +87,12 @@ jobs:
           Models auto-download on first run (hf-mirror mirror chain).
           "@ | Set-Content portable\README.txt
           Compress-Archive -Path portable\* -DestinationPath TIOL-win64-portable.zip
+
+      - name: Attach portable zip to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TIOL-win64-portable.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -126,10 +140,11 @@ jobs:
           # Only the .app: a dmg built here would NOT contain the dylib we
           # embed afterwards (C-11.5). The .app is the portable artifact.
           args: --bundles app
-          # tagName: v__VERSION__
-          # releaseName: "TIOL v__VERSION__"
-          # releaseDraft: true
-          # prerelease: false
+          # Release only on tag pushes; shares the Windows job's release.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && 'v__VERSION__' || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && 'TIOL v__VERSION__' || '' }}
+          releaseDraft: true
+          prerelease: false
 
       - name: Embed dylib into .app + zip portable
         run: |
@@ -138,6 +153,12 @@ jobs:
           # Note: unsigned dylib + unsigned app — fine for local testing.
           codesign --force --deep --sign - "$APP" || echo "codesign skipped (no identity)"
           ditto -c -k --sequesterRsrc --keepParent "$APP" TIOL-macos-arm64.zip
+
+      - name: Attach portable zip to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TIOL-macos-arm64.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

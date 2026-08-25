@@ -15,9 +15,22 @@ export function currentLang() {
 }
 
 async function loadMessages(lang) {
-  const res = await fetch(`locales/${lang}.json`);
-  if (!res.ok) throw new Error(`locale not found: ${lang}`);
-  return res.json();
+  // Retry — the asset-protocol fetch can fail transiently at app startup
+  // (observed on macOS: buttons showed raw i18n keys until a manual
+  // language click re-fetched successfully, C-11.7).
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(`locales/${lang}.json`);
+      if (!res.ok) throw new Error(`locale not found: ${lang} (HTTP ${res.status})`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  console.error(`loadMessages(${lang}) failed after retries:`, lastErr);
+  throw lastErr;
 }
 
 export function t(key, params) {
@@ -60,10 +73,32 @@ export function onLanguageChange(fn) {
 
 /**
  * Load default locale immediately (no flash), then apply the persisted
- * language from settings if it differs.
+ * language from settings if it differs. On failure, retries in the
+ * background until the locale arrives (UI self-heals — no raw keys).
  */
 export async function initI18n() {
-  messages = await loadMessages(current);
+  try {
+    await loadMessages(current);
+  } catch (e) {
+    // Fall back to retrying in the background (up to ~40s).
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts++;
+      if (attempts > 20) {
+        clearInterval(timer);
+        return;
+      }
+      try {
+        await loadMessages(current);
+        clearInterval(timer);
+        applyStaticI18n();
+      } catch (e2) {
+        /* keep waiting */
+      }
+    }, 2000);
+    console.error("initI18n: initial locale load failed, retrying in background:", e);
+    throw e;
+  }
   let saved = null;
   try {
     saved = await invoke("get_setting", { key: "language" });

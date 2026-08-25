@@ -864,6 +864,29 @@ fn main() {
                     }
                 });
             }
+            // Engine watchdog: if the engine still hasn't loaded, retry every
+            // 30s for up to 10 minutes. Transient startup failures (CoreML
+            // first compile, dylib timing, model verify races) self-heal
+            // instead of leaving the whole queue blocked forever — the queue
+            // waits for the engine, so "embedding never started" on a fresh
+            // macOS install usually means the engine load failed (C-11.7).
+            {
+                let wh = ai_engine.clone();
+                let ws = ai_status.clone();
+                let wm = model_dir.clone();
+                let wdb = db.clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        if wh.lock().await.is_some() {
+                            return; // engine is up
+                        }
+                        log::warn!("engine not loaded yet — retrying engine load");
+                        spawn_engine_load(wm.clone(), wh.clone(), ws.clone(), wdb.clone());
+                    }
+                    log::error!("engine watchdog gave up after 10 minutes — AI features offline (see settings model status / debug log)");
+                });
+            }
 
             // ---- window (hw decode + error page) ----
             let hw_args = match db.get_setting("hw_decode").ok().flatten().as_deref() {
