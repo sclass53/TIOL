@@ -106,6 +106,12 @@
 
 **修复**：① `spawn_engine_load` 用 `catch_unwind` 包裹加载，panic 消息写入日志与模型状态（含 BUILD.md §2 指引：`libonnxruntime.dylib` 需与可执行文件同目录）；② `pin_ort_dylib` 增加候选目录 `Contents/Frameworks`（macOS .app 惯例，防未来打包布局变化）；③ CI 的 macOS 嵌入步骤加 `test -f` 存在性校验（dylib 下载/嵌入失败即 job 报错，不再静默产出残缺包）。
 
+## C-11.13 · 2025-07 — macOS BadVersion：onnxruntime 版本过旧
+
+**确切报错**（catch_unwind 生效后拿到）：`Failed to load ONNX Runtime dylib: BadVersion { version_str: "1.16.3" }`——ort 2.0.0-rc.13 的 `ORT_API_VERSION = 17`，**运行时 onnxruntime 必须 ≥ 1.17**；CI 钉的 1.16.3 被版本检查拒绝（Windows 一直正常是因为内置 DLL 是 1.27）。
+
+**修复**：CI 的 macOS onnxruntime 升级到 **1.20.1**（`onnxruntime-osx-universal2-1.20.1.tgz`，universal2 + CoreML EP）；BUILD.md §2 明确标注"必须 ≥ 1.17（推荐 1.20.x）"。**本地 macOS 构建的用户也需更换 ≥1.17 的 dylib**（当前 1.16.3 直接报 BadVersion）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。

@@ -46,8 +46,9 @@
   - 发布：复制到 `src-tauri/target/release/onnxruntime.dll`（与 TIOL.exe 同目录）
   - **警告（C-11.2）**：Win11 24H2+ 系统内置了 `C:\Windows\system32\onnxruntime.dll`（最小版，CPU EP 无 ConvInteger 内核）。若 exe 旁缺少我们的 DLL，ort 会经 PATH 误加载系统版，表现为 cpu 模式报 `Could not find an implementation for ConvInteger(10)`。应用启动时会自动把 `ORT_DYLIB_PATH` 钉到 exe 同目录的 DLL（存在时），**但 exe 旁仍必须放我们的 DLL**。
   - 注意：该 DLL 不含 DirectML/CUDA EP——`gpu` 模式在本仓库环境下实为 CPU 回退（标签显示后端名，属已知外观问题）
-- **macOS**：仓库**未内置**，需要从官方 Releases 获取 **universal2 且编译时启用 CoreML EP 的 `onnxruntime.dylib`**（微软官方 macOS 构建默认含 CoreML EP）：
-  - 开发运行：放到可执行文件同目录，或设置环境变量 `ORT_DYLIB_PATH=/path/to/onnxruntime.dylib`
+- **macOS**：仓库**未内置**，需要从官方 Releases 获取 **universal2 且编译时启用 CoreML EP 的 `libonnxruntime.dylib`**（微软官方 macOS 构建默认含 CoreML EP）：
+  - **版本必须 ≥ 1.17**（ort 2.0.0-rc.13 的 `ORT_API_VERSION = 17`，旧版本加载时报 `BadVersion`——推荐 **1.20.x**，如 `onnxruntime-osx-universal2-1.20.1.tgz`）
+  - 开发运行：放到可执行文件同目录，或设置环境变量 `ORT_DYLIB_PATH=/path/to/libonnxruntime.dylib`
   - 发布：随 .app 打包（`bundle.resources` 放入 `Contents/Frameworks` 并签名），或首次启动下载到应用缓存目录后设置 `ORT_DYLIB_PATH`（参见 CHANGES.md C-10.6 的方案 B）
   - CoreML.framework 为 macOS 系统自带，**无需安装**；但 dylib 本身必须分发
 - **测试**：`cargo test` 的二进制在 `target/debug/deps/` 下找不到 DLL，跑真实模型测试前必须：
