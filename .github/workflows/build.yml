@@ -154,7 +154,11 @@ jobs:
       - name: Embed dylib into .app + zip portable
         run: |
           APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
+          test -f vendor/onnxruntime/osx-universal2/libonnxruntime.dylib \
+            || { echo "::error::onnxruntime dylib missing after download"; exit 1; }
           cp vendor/onnxruntime/osx-universal2/libonnxruntime.dylib "$APP/Contents/MacOS/"
+          test -f "$APP/Contents/MacOS/libonnxruntime.dylib" \
+            || { echo "::error::dylib embed failed"; exit 1; }
           # Note: unsigned dylib + unsigned app — fine for local testing.
           codesign --force --deep --sign - "$APP" || echo "codesign skipped (no identity)"
           ditto -c -k --sequesterRsrc --keepParent "$APP" TIOL-macos-arm64.zip

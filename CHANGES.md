@@ -100,6 +100,12 @@
 
 **② i18n 键名根治（Windows/macOS 均复现）**：初始 `fetch(locales/*.json)` 在双平台启动时持续失败（脚本加载正常、fetch 失败——asset 协议对两类请求的处理路径不同），重试方案无法根治。改为**语言包内嵌**：`scripts/gen-messages.js` 从 `locales/*.json` 生成 `locales/messages.js`（ES module，随前端打进二进制），`i18n.js` 启动时同步读取、**完全移除启动期 fetch**；语言切换仍走持久化设置。修改 JSON 后需重跑生成脚本（脚本已提交）。
 
+## C-11.12 · 2025-07 — macOS 引擎加载失败可见化 + dylib 定位加固
+
+**症状**：新构建（auto→cpu 生效）在 macOS 上仍"模型加载错误"，且日志无失败原因——ort 在 dylib 缺失/加载失败时内部 `expect()` **panic**（panic 只进 stderr，GUI 应用不可见）→ 看门狗静默重试、UI 只有笼统错误。
+
+**修复**：① `spawn_engine_load` 用 `catch_unwind` 包裹加载，panic 消息写入日志与模型状态（含 BUILD.md §2 指引：`libonnxruntime.dylib` 需与可执行文件同目录）；② `pin_ort_dylib` 增加候选目录 `Contents/Frameworks`（macOS .app 惯例，防未来打包布局变化）；③ CI 的 macOS 嵌入步骤加 `test -f` 存在性校验（dylib 下载/嵌入失败即 job 报错，不再静默产出残缺包）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。

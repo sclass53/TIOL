@@ -125,15 +125,38 @@ fn spawn_engine_load(
             .ok()
             .flatten()
             .unwrap_or_else(|| "auto".to_string());
-        match AIEngine::load(&model_dir, &mode) {
-            Ok((engine, backend)) => {
+        // ort can PANIC (e.g. `expect("Failed to load ONNX Runtime dylib")`
+        // when the runtime library is missing) — panics only reach stderr,
+        // invisible in a GUI app, so the watchdog would retry silently
+        // forever. Catch it and surface the reason (C-11.12).
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            AIEngine::load(&model_dir, &mode)
+        }));
+        match result {
+            Ok(Ok((engine, backend))) => {
                 *engine_holder.lock().await = Some(engine);
                 log::info!("AI engine loaded (backend={})", backend);
                 *status_holder.lock().unwrap() = Some(ModelStatus::Locked(backend));
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::error!("AI engine load failed: {}", e);
                 *status_holder.lock().unwrap() = Some(ModelStatus::Degraded(e.to_string()));
+            }
+            Err(panic) => {
+                let msg = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                // The #1 macOS cause: the ONNX Runtime dynamic library is
+                // missing next to the executable (see BUILD.md §2).
+                let hint = format!(
+                    "engine load panicked: {msg} — check that the ONNX Runtime library \
+                     (libonnxruntime.dylib / onnxruntime.dll) sits next to the executable \
+                     (BUILD.md §2)"
+                );
+                log::error!("{}", hint);
+                *status_holder.lock().unwrap() = Some(ModelStatus::Degraded(hint));
             }
         }
     });
@@ -732,17 +755,25 @@ fn pin_ort_dylib() {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join(LIB_NAME);
-            if candidate.exists() {
-                std::env::set_var("ORT_DYLIB_PATH", &candidate);
-                log::info!("pinned ONNX Runtime: {}", candidate.display());
-            } else {
-                log::warn!(
-                    "{} not found next to the executable — ort will use its default search \
-                     (on Windows this may load the system inbox copy)",
-                    candidate.display()
-                );
+            // Candidate locations: next to the executable, and (macOS .app
+            // convention) Contents/Frameworks.
+            #[allow(unused_mut)] // macOS-only push
+            let mut candidates = vec![dir.join(LIB_NAME)];
+            #[cfg(target_os = "macos")]
+            candidates.push(dir.join("../Frameworks").join(LIB_NAME));
+            for candidate in candidates {
+                if candidate.exists() {
+                    std::env::set_var("ORT_DYLIB_PATH", &candidate);
+                    log::info!("pinned ONNX Runtime: {}", candidate.display());
+                    return;
+                }
             }
+            log::warn!(
+                "{} not found next to the executable (or Contents/Frameworks on macOS) — \
+                 ort will use its default search; on Windows this may load the system inbox \
+                 copy. See BUILD.md §2.",
+                LIB_NAME
+            );
         }
     }
 }
