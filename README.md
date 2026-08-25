@@ -4,7 +4,9 @@
 
 # TIOL — AI Local Photo Manager
 
-Supports **MacOS**, **Windows**, and **Linux**. Privacy-first, local-first photo management. All photos stay on your own hard drive. AI inference runs completely offline (SigLIP2 + user-defined zero-shot labels). No cloud services required.
+Supports **MacOS**, **Windows**, and **Linux**. 
+
+Privacy-first, local-first photo management. All photos stay on your own hard drive. AI inference runs completely offline. No cloud services required.
 
 ## Features
 
@@ -15,6 +17,10 @@ Supports **MacOS**, **Windows**, and **Linux**. Privacy-first, local-first photo
 - 🖥️ **AI Engine Options**: auto / GPU / CPU / Apple CoreML (macOS native Neural Engine acceleration) – fully local
 - 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
 - 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML, and many more
+
+## Installation
+
+[Compiled Installers & Portable editions](https://github.com/sclass53/TIOL/releases)
 
 ## Quick Start
 

@@ -4,7 +4,9 @@
 
 # TIOL — AI Local Photo Manager
 
-支持 **MacOS**, **Windows**, 和**Linux**。隐私优先，本地优先的照片管理应用：照片全程留在你自己的硬盘上，AI 推理完全离线运行（SigLIP2 + 用户自定义零样本标签），不需要任何云端服务。
+支持 **MacOS**, **Windows**, 和**Linux**。
+
+隐私优先，本地优先的照片管理应用。照片全程留在你自己的硬盘上，AI 推理完全离线运行，不需要任何云端服务。
 
 ## 功能
 
@@ -14,6 +16,10 @@
 - 🖥️ **AI 引擎可选**：auto / GPU / CPU / Apple CoreML（Neural Engine 原生加速），全本地运行
 - 🔒 **模型锁定**：SHA256 校验 + 断点续传 + 国内镜像回退，模型损坏自动修复
 - 💻 **多平台支持**: 支持Windows, MacOS, 和Linux. 支持英伟达 CUDA, cpu, 苹果 CoreML, 等等
+
+## 安装
+
+[点击查看打包好的版本](https://github.com/sclass53/TIOL/releases)
 
 ## 快速开始
 
