@@ -63,7 +63,9 @@
   },
   "tagging": {
     "badge": "Tagging in progress",
-    "remaining": "{count} left"
+    "indexing": "Indexing",
+    "remaining": "{count} left",
+    "indexingRemaining": "{count} left"
   },
   "settings": {
     "title": "Settings",

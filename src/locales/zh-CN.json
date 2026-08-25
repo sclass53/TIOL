@@ -63,7 +63,9 @@
   },
   "tagging": {
     "badge": "正在标记中",
-    "remaining": "剩余 {count} 张"
+    "indexing": "正在索引",
+    "remaining": "剩余 {count} 张",
+    "indexingRemaining": "剩余 {count} 张"
   },
   "settings": {
     "title": "设置",

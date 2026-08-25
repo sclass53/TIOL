@@ -712,7 +712,43 @@ fn get_logs(limit: Option<usize>) -> Vec<String> {
     logbuf::snapshot(limit.unwrap_or(200).min(1000))
 }
 
+/// Pin the ONNX Runtime dynamic library BEFORE any ort call: ort load-dynamic
+/// resolves ORT_DYLIB_PATH -> exe-dir/<default name> -> bare name. The bare
+/// fallback on Windows can pick up the INBOX `C:\Windows\system32\
+/// onnxruntime.dll` (Win11 24H2 ships one) — a minimal build whose CPU EP
+/// lacks ConvInteger kernels, producing confusing "Could not find an
+/// implementation for ConvInteger" errors (C-11.2). Pinning the vendored
+/// library next to the executable avoids that entirely.
+fn pin_ort_dylib() {
+    #[cfg(target_os = "windows")]
+    const LIB_NAME: &str = "onnxruntime.dll";
+    #[cfg(target_os = "macos")]
+    const LIB_NAME: &str = "libonnxruntime.dylib";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    const LIB_NAME: &str = "libonnxruntime.so";
+
+    if std::env::var_os("ORT_DYLIB_PATH").is_some() {
+        return; // explicit override (tests / manual setups)
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(LIB_NAME);
+            if candidate.exists() {
+                std::env::set_var("ORT_DYLIB_PATH", &candidate);
+                log::info!("pinned ONNX Runtime: {}", candidate.display());
+            } else {
+                log::warn!(
+                    "{} not found next to the executable — ort will use its default search \
+                     (on Windows this may load the system inbox copy)",
+                    candidate.display()
+                );
+            }
+        }
+    }
+}
+
 fn main() {
+    pin_ort_dylib();
     logbuf::init();
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Info)
@@ -781,9 +817,14 @@ fn main() {
             // queue for zero-shot tag matching (MIGRATE1.md V3.0).
             let tag_cache: Arc<std::sync::RwLock<Vec<ai::engine::TagVec>>> =
                 Arc::new(std::sync::RwLock::new(Vec::new()));
+            // Set once the first cache build finished — the consumer waits
+            // for it so no file is processed against an empty cache (C-11.1).
+            let cache_ready: Arc<std::sync::atomic::AtomicBool> =
+                Arc::new(std::sync::atomic::AtomicBool::new(false));
             let consumer_db = db.clone();
             let consumer_engine = ai_engine.clone();
             let consumer_tags = tag_cache.clone();
+            let consumer_ready = cache_ready.clone();
             let consumer_control = ai_control.clone();
             let consumer_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -792,26 +833,34 @@ fn main() {
                     consumer_db,
                     consumer_engine,
                     consumer_tags,
+                    consumer_ready,
                     consumer_control,
                     Some(consumer_app),
                 )
                 .await;
             });
 
-            // ---- AI: model lock + download (ADD.md §4); engine loads after ----
+            // ---- AI: model lock + download (ADD.md §4); engine loads AFTER
+            // models are verified (a first-time user has nothing downloaded:
+            // loading before the download finishes would fail permanently —
+            // C-11.3). When models already exist, verification is a quick
+            // hash check, so this adds ~1-2s before the engine is ready.
             {
                 let app_handle = app.handle().clone();
                 let status_holder = ai_status.clone();
                 let model_dir_task = model_dir.clone();
+                let engine_holder = ai_engine.clone();
+                let status_db = db.clone();
                 tauri::async_runtime::spawn(async move {
-                    let status = ai::downloader::init_models_async(model_dir_task, app_handle.clone()).await;
+                    let status = ai::downloader::init_models_async(model_dir_task.clone(), app_handle.clone()).await;
                     {
                         let mut s = status_holder.lock().unwrap();
                         *s = Some(status.clone());
                     }
                     ai::downloader::emit_status(&app_handle, &status);
                     if matches!(status, ModelStatus::Locked(_)) {
-                        log::info!("models verified — engine will load");
+                        log::info!("models verified — loading engine");
+                        spawn_engine_load(model_dir_task, engine_holder, status_holder, status_db);
                     }
                 });
             }
@@ -869,14 +918,16 @@ fn main() {
                 ai_status: ai_status.clone(),
                 watcher: Arc::new(std::sync::Mutex::new(None)),
             };
-            // Engine loads once models are verified (auto backend detection).
-            spawn_engine_load(model_dir.clone(), ai_engine.clone(), ai_status, db.clone());
+            // Engine loads AFTER models are verified (see the downloader
+            // task above) — no eager load here, or a first-time user whose
+            // models are still downloading would fail permanently (C-11.3).
             // Build the user-tag vector cache once the engine is ready
             // (MIGRATE1.md §2.2: tag vectors are cached in memory).
             {
                 let cdb = db.clone();
                 let cengine = ai_engine.clone();
                 let ccache = tag_cache.clone();
+                let cready = cache_ready.clone();
                 tauri::async_runtime::spawn(async move {
                     for _ in 0..120 {
                         if cengine.lock().await.is_some() {
@@ -885,6 +936,9 @@ fn main() {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }
                     rebuild_tag_cache(cdb, cengine, ccache).await;
+                    // Release the consumer (even on an empty cache — the
+                    // empty-tag-list case is handled inside process_one).
+                    cready.store(true, std::sync::atomic::Ordering::SeqCst);
                 });
             }
 

@@ -44,6 +44,7 @@
 - **Windows**：`vendor/onnxruntime/win-x64/onnxruntime.dll`（仓库已内置，CPU 版）
   - 开发运行：复制到 `src-tauri/target/debug/onnxruntime.dll`（`cargo tauri dev` 前）
   - 发布：复制到 `src-tauri/target/release/onnxruntime.dll`（与 TIOL.exe 同目录）
+  - **警告（C-11.2）**：Win11 24H2+ 系统内置了 `C:\Windows\system32\onnxruntime.dll`（最小版，CPU EP 无 ConvInteger 内核）。若 exe 旁缺少我们的 DLL，ort 会经 PATH 误加载系统版，表现为 cpu 模式报 `Could not find an implementation for ConvInteger(10)`。应用启动时会自动把 `ORT_DYLIB_PATH` 钉到 exe 同目录的 DLL（存在时），**但 exe 旁仍必须放我们的 DLL**。
   - 注意：该 DLL 不含 DirectML/CUDA EP——`gpu` 模式在本仓库环境下实为 CPU 回退（标签显示后端名，属已知外观问题）
 - **macOS**：仓库**未内置**，需要从官方 Releases 获取 **universal2 且编译时启用 CoreML EP 的 `onnxruntime.dylib`**（微软官方 macOS 构建默认含 CoreML EP）：
   - 开发运行：放到可执行文件同目录，或设置环境变量 `ORT_DYLIB_PATH=/path/to/onnxruntime.dylib`

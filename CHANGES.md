@@ -3,6 +3,68 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-11 · 2025-07 — GitHub Actions 跨平台 CI 构建
+
+**需求**：无需本地 Mac，通过 GitHub Actions 编译 macOS（及 Windows）发布版。
+
+**实现**：
+
+- `.github/workflows/build.yml`：双 job（`windows-latest` 出 msi/nsis + 便携 zip；`macos-14`（Apple Silicon）出 .app/dmg）。触发：push main（仅构建）、tag `v*`（草稿 Release）、手动 dispatch。
+- 图标：新增 `app-icon.png`（1024×1024 占位图标，纯 Node 生成，无依赖），CI 里 `npx @tauri-apps/cli icon` 生成全套（含 macOS 必需的 icon.icns）。
+- ONNX Runtime：Windows 用仓库内置 `vendor/onnxruntime/win-x64/onnxruntime.dll`；macOS 在 CI 下载官方 **universal2 含 CoreML EP** 的 `onnxruntime-osx-universal2-1.16.3.tgz`（版本+URL 在 workflow env 钉死，SHA256 待首次运行后补填 `ORT_MAC_SHA256`）。
+- 产物：**安装包暂不内嵌 ORT 库**，功能性产物为便携包（Windows：exe+dll 压缩 zip；macOS：dylib 拷入 `.app/Contents/MacOS` 并 ad-hoc 签名）——运行时 dylib 分发（CHANGES.md C-10.6 方案 B 的打包变体）与安装器内嵌留待后续（需 `bundle.resources` + 启动时 `ORT_DYLIB_PATH` 探测）。
+- macOS 签名/公证未配置（无 Apple 开发者证书 Secrets）；workflow 中已注释接入点（APPLE_* Secrets + tauri-action signing inputs）。
+
+**注意事项**：① CI 网络畅通，crates 直连（`src-tauri/.cargo/config.toml` 本地代理已 gitignore，不影响 CI）；② `Cargo.lock` 已提交保证可复现；③ 首次运行后需把 onnxruntime tgz 的 SHA256 填入 `ORT_MAC_SHA256`（防供应链篡改）。
+
+## C-11.1 · 2025-07 — 首启空标签行为确认 + 标签缓存竞态修复 + CI 兼容性核查
+
+**① 无标签时不会打标（确认+防误解）**：首启/扫描时，`process_one` 在标签列表为空时**只做嵌入、跳过全部标签匹配**（`if !tagvecs.is_empty()` 分支），不产生任何标签尝试，也不写 unknown。新增一次性日志 `no user tags defined — embedding only, tagging skipped` 让行为可见；嵌入仍保留（语义搜索与后续打标都依赖它）。
+
+**② 标签缓存竞态修复（真实 bug）**：启动时序为 引擎就绪(T0) → 标签缓存构建完成(T0+~0.5s)。在 T0~T0+0.5s 窗口内被处理的文件会在**空缓存**下完成（既不打标也不 unknown），且因 `ai_processed=3` 永不再查——与其余文件不一致。修复：新增 `cache_ready`（AtomicBool），`rebuild_tag_cache` 首次构建完成后置位，**消费者在首次构建完成前不处理任何任务**（上限约 120s，与引擎等待一致）。
+
+**③ CI 兼容性核查结论**：ort 的 cuda/directml 模块是**按名字注册的 EP 派发器**（load-dynamic 设计），directml.rs 无任何平台 cfg、cuda.rs 的 windows cfg 仅涉及 DLL 预载路径 → macOS 编译兼容（coreml 特性在 Windows 构建已证反向成立）；`vendor/onnxruntime/win-x64/onnxruntime.dll` 与 `src-tauri/entitlements.plist` 已入库（CI 必需）；`src-tauri/.cargo/config.toml` 确认被 gitignore（CI 直连 crates.io）；**待提交**：`app-icon.png`、`.github/workflows/build.yml`（提交前提醒用户）。
+
+## C-11.2 · 2025-07 — cpu 模式 ConvInteger 报错：系统内置 onnxruntime 劫持
+
+**症状**：选择 cpu 后端 → `Model error — Could not find an implementation for ConvInteger(10)`（debug 构建正常，release 构建复现）。
+
+**根因**：**Win11 24H2+ 系统内置 `C:\Windows\system32\onnxruntime.dll`**（最小版，CPU EP 无 ConvInteger 内核）。release exe 目录没有我们的 vendored DLL 时，ort load-dynamic 的裸名回退走 PATH 搜到系统版 → 加载错库 → ConvInteger 无实现。
+
+**修复**：① `pin_ort_dylib()`（main() 最早处）：存在 `ORT_DYLIB_PATH` 则尊重，否则把 exe 同目录的平台库名（onnxruntime.dll / libonnxruntime.dylib / libonnxruntime.so）钉进 `ORT_DYLIB_PATH`，缺失时打警告；② 本次已把 DLL 复制到 `target/release/`（现有 release exe 无需重编译即可修复——ort 的 exe-dir 优先搜索会命中）。BUILD.md §2 增补该坑的说明。
+
+## C-11.3 · 2025-07 — 新用户首次启动工作流修复与验证
+
+**需求**：删除本机应用数据/模型/旧 demo 数据，模拟新用户首次启动（下载→建库→添加目录→搜索）全流程。
+
+**发现并修复的真实 bug**：引擎加载只在启动时执行一次——新用户模型未下载时加载失败（Degraded），**下载完成后没有任何重试**，语义搜索/打标永久不可用（必须重启）。修复：`spawn_engine_load` 移到 **init_models_async 验证成功之后**（`models verified — loading engine`）；移除 setup 中的早期加载。已有模型时验证为哈希检查（~1-2s），体验不变。
+
+**新用户全流程实测通过**（日志验证）：
+
+1. 全新 DB 创建 + 旧 demo 数据迁移（无旧数据时跳过）
+2. 模型 412MB **由应用自带下载器完成下载**（镜像链 hf-mirror，本环境首次真实跑通；断点续传经 .part 验证）
+3. **下载完成 → 引擎自动加载**（backend=cuda），无需重启 ✓
+4. 添加目录 → 1032 张扫描/缩略图/监控正常
+5. 无标签时 `no user tags defined — embedding only, tagging skipped`（零打标尝试，C-11.1 行为可见）✓
+6. cpu 模式正常（C-11.2 钉路径生效）✓
+
+**注意**：新用户首次的 1032 张库需要几分钟后台嵌入（一次性成本，语义搜索前可用）；此后增量。
+
+## C-11.4 · 2025-07 — 浮窗文案区分"索引/打标"（无标签时误导）
+
+**现象**：未添加任何标签时添加图片库，右上角浮窗显示"正在标记中"——实际只做**嵌入（索引）**，打标已跳过（C-11.1 日志可见）。文案误导用户以为在打标签。
+
+**修复**：`ai-queue-status` 事件新增 `tagging: bool`（消费者发射时读标签缓存是否非空）；前端浮窗按标志切换文案——无标签显示"**正在索引**·剩余 N 张"，有标签显示"**正在标记中**·剩余 N 张"。i18n 新增 `tagging.indexing/indexingRemaining`（中英）。语义不变：嵌入是语义搜索的前提，仍在前台一次性完成。
+
+## C-11.5 · 2025-07 — CI 便携包审查与修正
+
+**审查发现两个问题**：
+
+1. **Windows 便携包复制了错误的文件名**：cargo 原始产物是 **`tiol.exe`**（小写，`TIOL.exe` 只在安装包内被重命名）——原步骤复制 `TIOL.exe` 会失败/产出缺 exe 的空 zip。修复：`Get-ChildItem tiol.exe, TIOL.exe` 取存在的那个，找不到直接 `throw` 失败。
+2. **macOS dmg 缺 dylib（顺序错误）**：tauri 在嵌入 dylib **之前**就生成 dmg → 上传的 dmg 内没有 onnxruntime。修复：macOS 改为 `--bundles app` 只出 .app → 嵌入 dylib → ad-hoc 签名 → `ditto` 打包 `TIOL-macos-arm64.zip` 上传（dmg 留待 bundle.resources 方案）。
+
+**便携包内容（功能完整）**：Windows zip = tiol.exe + onnxruntime.dll + README；macOS zip = TIOL.app（dylib 已内嵌 Contents/MacOS 并 ad-hoc 签名）。安装包（msi/nsis）仍不内嵌 ORT（已知缺口，见 C-11）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。

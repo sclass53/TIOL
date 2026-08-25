@@ -70,6 +70,10 @@ impl AITask {
 pub struct AiProgress {
     pub done: u64,
     pub remaining: i64,
+    /// True when the current work involves tag matching (user tags exist) —
+    /// false while only embedding/indexing runs (badge shows "Indexing"
+    /// instead of "Tagging", C-11.4).
+    pub tagging: bool,
 }
 
 pub type AITaskSender = mpsc::Sender<AITask>;
@@ -80,6 +84,7 @@ pub async fn run_consumer(
     db: Arc<Db>,
     engine: Arc<Mutex<Option<AIEngine>>>,
     tag_cache: Arc<std::sync::RwLock<Vec<TagVec>>>,
+    cache_ready: Arc<std::sync::atomic::AtomicBool>,
     control: Arc<AIControl>,
     app: Option<tauri::AppHandle>,
 ) {
@@ -87,6 +92,21 @@ pub async fn run_consumer(
     // Throttle for the floating progress badge: emit at most every 300ms,
     // but ALWAYS emit when the queue empties (badge hides).
     let mut last_progress = std::time::Instant::now() - Duration::from_secs(1);
+    // Log "embedding only" once per run when no user tags are defined.
+    let mut empty_warned = false;
+    // Wait for the tag cache to be built ONCE before processing anything:
+    // files processed in the gap between engine-ready and cache-ready would
+    // be marked done with an empty cache — no tag check, no "unknown", and
+    // never revisited (C-11.1 race fix).
+    loop {
+        if cache_ready.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        if rx.is_closed() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     while let Some(task) = rx.recv().await {
         // Folder invalidated since this task was enqueued? Skip it (and any
         // other stale tasks already in the channel) without touching the file.
@@ -112,7 +132,7 @@ pub async fn run_consumer(
         loop {
             let guard = engine.lock().await;
             let result = match guard.as_ref() {
-                Some(eng) => process_one(eng, &tag_cache, &db, &task).await,
+                Some(eng) => process_one(eng, &tag_cache, &db, &task, &mut empty_warned).await,
                 None => Err("engine not ready".to_string()),
             };
             drop(guard);
@@ -143,8 +163,15 @@ pub async fn run_consumer(
             let remaining = rx.len() as i64;
             let emit = remaining == 0 || last_progress.elapsed() >= Duration::from_millis(300);
             if emit {
+                let tagging = !tag_cache
+                    .read()
+                    .map(|g| g.is_empty())
+                    .unwrap_or(true);
                 use tauri::Emitter;
-                let _ = app.emit("ai-queue-status", AiProgress { done: processed, remaining });
+                let _ = app.emit(
+                    "ai-queue-status",
+                    AiProgress { done: processed, remaining, tagging },
+                );
                 last_progress = std::time::Instant::now();
             }
         }
@@ -159,6 +186,7 @@ async fn process_one(
     tag_cache: &Arc<std::sync::RwLock<Vec<TagVec>>>,
     db: &Db,
     task: &AITask,
+    empty_warned: &mut bool,
 ) -> Result<(), String> {
     let path = std::path::Path::new(&task.path);
 
@@ -279,6 +307,12 @@ async fn process_one(
             log::info!("tag {} {}: {}", task.file_id, task.path, top.join(", "));
             db.set_file_tags(task.file_id, &hits, 1)?;
         }
+    } else if !*empty_warned {
+        *empty_warned = true;
+        // First launch / no tags yet: embedding only — the file is marked
+        // done WITHOUT any tag check (and without "unknown" spam). Adding a
+        // tag later re-checks it (single-tag flow).
+        log::info!("no user tags defined — embedding only, tagging skipped");
     }
 
     // 3. Done.

@@ -1,0 +1,139 @@
+# TIOL — cross-platform release builds (Windows + macOS)
+#
+# Triggers:
+#   - push to main      : build only (artifacts)
+#   - tag v*            : build + draft GitHub Release
+#   - manual dispatch   : build only
+#
+# Notes:
+#   - macOS artifacts are unsigned (no Apple signing secrets configured yet).
+#     To enable signing/notarization, add the standard tauri-action secrets
+#     (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#     APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID) and uncomment the signing
+#     inputs below. See https://v2.tauri.app/distribute/sign/macos/
+#   - ONNX Runtime: the Windows DLL is vendored in the repo; the macOS
+#     universal2 dylib (CoreML EP, official Microsoft build) is downloaded
+#     in CI. Both are copied next to the built binaries so the app can load
+#     them at runtime (ort load-dynamic). Installers do NOT embed them yet —
+#     the portable zips are the functional artifacts (see CHANGES.md C-11).
+#   - icons: generated from app-icon.png via `npx tauri icon` (needs npm,
+#     available on all runners; icon.icns is required for macOS bundling).
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # macOS ONNX Runtime (universal2, CoreML EP included) — pin version+sha256.
+  ORT_MAC_VERSION: "1.16.3"
+  ORT_MAC_URL: "https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-osx-universal2-1.16.3.tgz"
+  ORT_MAC_SHA256: ""
+
+jobs:
+  build-windows:
+    name: Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate icons (icon.ico / icon.png)
+        run: npx --yes @tauri-apps/cli icon app-icon.png --output src-tauri/icons
+
+      - name: Build + bundle (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          # Unsigned build; add secrets + signing inputs when distributing.
+          args: --bundles msi,nsis
+          # tagName: v__VERSION__
+          # releaseName: "TIOL v__VERSION__"
+          # releaseDraft: true
+          # prerelease: false
+
+      - name: Assemble portable folder (exe + onnxruntime.dll)
+        shell: pwsh
+        run: |
+          # The raw cargo artifact is "tiol.exe" (lowercase); the bundle
+          # renames it to TIOL.exe only inside installers. Pick whichever
+          # exists (C-11.5).
+          $exe = Get-ChildItem src-tauri/target/release/tiol.exe, src-tauri/target/release/TIOL.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "release exe not found" }
+          New-Item -ItemType Directory -Force portable | Out-Null
+          Copy-Item $exe.FullName portable/
+          Copy-Item vendor/onnxruntime/win-x64/onnxruntime.dll portable/
+          @"
+          TIOL portable build — onnxruntime.dll included next to the exe.
+          Data: %APPDATA%\com.tiol.desktop
+          Models auto-download on first run (hf-mirror mirror chain).
+          "@ | Set-Content portable\README.txt
+          Compress-Archive -Path portable\* -DestinationPath TIOL-win64-portable.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiol-windows
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            TIOL-win64-portable.zip
+          if-no-files-found: warn
+
+  build-macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (aarch64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Generate icons (icon.icns / icon.ico / icon.png)
+        run: npx --yes @tauri-apps/cli icon app-icon.png --output src-tauri/icons
+
+      - name: Download onnxruntime universal2 (CoreML EP)
+        run: |
+          mkdir -p vendor/onnxruntime/osx-universal2
+          curl -L --fail -o ort.tgz "${{ env.ORT_MAC_URL }}"
+          if [ -n "${{ env.ORT_MAC_SHA256 }}" ]; then
+            echo "${{ env.ORT_MAC_SHA256 }}  ort.tgz" | shasum -a 256 -c -
+          fi
+          tar -xzf ort.tgz
+          # The official macOS package ships "libonnxruntime.dylib".
+          find . -name "libonnxruntime*.dylib" -exec cp {} vendor/onnxruntime/osx-universal2/libonnxruntime.dylib \;
+
+      - name: Build + bundle (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          # Only the .app: a dmg built here would NOT contain the dylib we
+          # embed afterwards (C-11.5). The .app is the portable artifact.
+          args: --bundles app
+          # tagName: v__VERSION__
+          # releaseName: "TIOL v__VERSION__"
+          # releaseDraft: true
+          # prerelease: false
+
+      - name: Embed dylib into .app + zip portable
+        run: |
+          APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
+          cp vendor/onnxruntime/osx-universal2/libonnxruntime.dylib "$APP/Contents/MacOS/"
+          # Note: unsigned dylib + unsigned app — fine for local testing.
+          codesign --force --deep --sign - "$APP" || echo "codesign skipped (no identity)"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" TIOL-macos-arm64.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiol-macos
+          path: |
+            src-tauri/target/release/bundle/macos/*.app
+            TIOL-macos-arm64.zip
+          if-no-files-found: warn

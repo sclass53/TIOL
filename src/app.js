@@ -50,6 +50,7 @@ const els = {
   confirmOk: document.getElementById("confirm-ok"),
   confirmCancel: document.getElementById("confirm-cancel"),
   taggingBadge: document.getElementById("tagging-badge"),
+  taggingTitle: document.querySelector(".tagging-badge__title"),
   taggingFill: document.getElementById("tagging-fill"),
   taggingCount: document.getElementById("tagging-count"),
   editOverlay: document.getElementById("edit-overlay"),
@@ -237,9 +238,15 @@ listen("ai-queue-status", (ev) => {
   aiProgress = d;
   renderModelStatus();
   // Floating badge (top-right): visible while background work remains.
+  // "Tagging" vs "Indexing" depends on whether user tags exist (the engine
+  // also embeds photos — that is indexing, not tagging).
   els.taggingBadge.hidden = remaining <= 0;
   if (remaining > 0) {
-    els.taggingCount.textContent = t("tagging.remaining", { count: remaining });
+    const tagging = !!d.tagging;
+    els.taggingTitle.textContent = t(tagging ? "tagging.badge" : "tagging.indexing");
+    els.taggingCount.textContent = t(tagging ? "tagging.remaining" : "tagging.indexingRemaining", {
+      count: remaining,
+    });
     const total = done + remaining;
     els.taggingFill.style.width =
       total > 0 ? `${Math.round((done / total) * 100)}%` : "0%";
