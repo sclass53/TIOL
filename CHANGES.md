@@ -88,6 +88,18 @@
 
 **tag 触发运行失败**：`Error: GITHUB_TOKEN is required`——tauri-action 创建/更新 Release 时读取 `GITHUB_TOKEN` 环境变量，**不会自动注入**，必须在 job 级显式传入。修复：两个 job 加 `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`（自动 token，无需配置；配合 workflow 级 `permissions: contents: write` 具备写权限）。附带确认：macOS 编译+打包+tar 打包已成功，问题仅在 Release 创建一步。
 
+## C-11.10 · 2025-07 — macOS 引擎永不加载：CoreML 探测卡死
+
+**症状（macOS 日志）**：`models verified — loading engine` 后引擎一直不加载，看门狗每 30s 重试、无失败原因——加载任务在 **CoreML 探测/首次编译**上卡住（int8 模型的 ConvInteger 量化算子 CoreML EP 本就不支持；探测时会做真实 session 构建+冒烟推理，首次 CoreML 编译可长时间挂起），消费者因此永远等不到引擎 → 嵌入/打标/语义搜索全停。
+
+**修复**：① macOS 的 **auto 模式直接走 CPU**（跳过 CoreML 探测——int8 模型本就不该上 CoreML，CPU 推理 ~150ms/张足够）；② `load()` 中任何 provider 的 session 构建失败**自动回退 CPU**（gpu/mlx 显式选择也不再整体失败，warn 日志说明）；③ 页面判断接受 `tauri://` 前缀（macOS 首次加载出现过 `tauri://localhost` 被误判为异常页而重定向错误页，一并修复）。
+
+## C-11.11 · 2025-07 — 仅 tag 触发 CI + i18n 内嵌根治键名问题
+
+**① workflow 改为仅 tag 触发**：移除 `push: branches: [main]`——日常推送不再编译；仅 `tag v*` 触发（构建+草稿 Release）与手动 dispatch（仅构建，不建 Release，tagName 门控保留）。
+
+**② i18n 键名根治（Windows/macOS 均复现）**：初始 `fetch(locales/*.json)` 在双平台启动时持续失败（脚本加载正常、fetch 失败——asset 协议对两类请求的处理路径不同），重试方案无法根治。改为**语言包内嵌**：`scripts/gen-messages.js` 从 `locales/*.json` 生成 `locales/messages.js`（ES module，随前端打进二进制），`i18n.js` 启动时同步读取、**完全移除启动期 fetch**；语言切换仍走持久化设置。修改 JSON 后需重跑生成脚本（脚本已提交）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。

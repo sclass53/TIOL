@@ -914,9 +914,15 @@ fn main() {
                             return;
                         }
                         let url = payload.url().as_str();
+                        // Accept the app pages AND the legacy/asset scheme
+                        // ("tauri://localhost" appeared on macOS first-load,
+                        // C-11.10) — only foreign URLs redirect to the error
+                        // page.
                         let is_app_page = url.ends_with("index.html")
                             || url.ends_with("error.html")
-                            || url.ends_with('/');
+                            || url.ends_with('/')
+                            || url.starts_with("tauri://localhost")
+                            || url.contains("tauri.localhost");
                         if !is_app_page && !redirected_hook.swap(true, Ordering::SeqCst) {
                             log::warn!(
                                 "navigation failed or unexpected page ({}), showing in-app error page",

@@ -1,10 +1,10 @@
 # TIOL — cross-platform release builds (Windows + macOS)
 #
 # Triggers:
-#   - push to main      : build only (artifacts)
 #   - tag v*            : build + create DRAFT GitHub Release with all
 #                         installers and portable zips (publish manually)
-#   - manual dispatch   : build only
+#   - manual dispatch   : build only (no release)
+#   (Branch pushes do NOT build — releases only, C-11.11.)
 #
 # Notes:
 #   - macOS artifacts are unsigned (no Apple signing secrets configured yet).
@@ -24,7 +24,6 @@ name: build
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 

@@ -97,23 +97,34 @@ fn apple_accel_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
 /// build AND a smoke inference (a provider can register successfully yet be
 /// unusable at runtime, e.g. missing CUDA DLLs). First working one wins.
 fn detect_backend(probe_model: &Path) -> (Vec<ort::ep::ExecutionProviderDispatch>, &'static str) {
-    #[cfg(target_os = "windows")]
-    let candidates: [(&'static str, ort::ep::ExecutionProviderDispatch); 2] = [
-        ("cuda", ort::ep::CUDA::default().build()),
-        ("directml", ort::ep::DirectML::default().build()),
-    ];
     #[cfg(target_os = "macos")]
-    let candidates: [(&'static str, ort::ep::ExecutionProviderDispatch); 1] =
-        [("coreml", ort::ep::CoreML::default().build())];
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let candidates: [(&'static str, ort::ep::ExecutionProviderDispatch); 0] = [];
-
-    for (label, provider) in candidates {
-        if probe_works(probe_model, &provider) {
-            return (vec![provider], label);
-        }
+    {
+        // The int8 vision model's quantized ops (ConvInteger) are not
+        // supported by CoreML EP, and probing it can STALL on the first
+        // CoreML model compilation — observed as "engine never loads" on
+        // macOS (C-11.10). Default to CPU; CoreML stays available through
+        // the explicit "gpu" / "mlx" modes (with CPU fallback in load()).
+        let _ = probe_model;
+        log::info!("auto backend on macOS -> cpu (int8 model; CoreML via explicit gpu/mlx)");
+        return (vec![ort::ep::CPU::default().build()], "cpu");
     }
-    (vec![ort::ep::CPU::default().build()], "cpu")
+    #[cfg(not(target_os = "macos"))]
+    {
+        #[cfg(target_os = "windows")]
+        let candidates: [(&'static str, ort::ep::ExecutionProviderDispatch); 2] = [
+            ("cuda", ort::ep::CUDA::default().build()),
+            ("directml", ort::ep::DirectML::default().build()),
+        ];
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let candidates: [(&'static str, ort::ep::ExecutionProviderDispatch); 0] = [];
+
+        for (label, provider) in candidates {
+            if probe_works(probe_model, &provider) {
+                return (vec![provider], label);
+            }
+        }
+        (vec![ort::ep::CPU::default().build()], "cpu")
+    }
 }
 
 /// Build a session with the provider and run one dummy inference
@@ -159,10 +170,26 @@ impl AIEngine {
             _ => detect_backend(&vision_path),
         };
 
-        let vision = build_session(&vision_path, &providers)
-            .map_err(|e| AppError::Ai(format!("vision: {e}")))?;
-        let text = build_session(&model_dir.join("text_model_int8.onnx"), &providers)
-            .map_err(|e| AppError::Ai(format!("text: {e}")))?;
+        // Build sessions with the chosen providers, falling back to CPU if
+        // the provider set can't host the model (e.g. CoreML vs int8 ops) —
+        // the engine must load, not fail the whole app (C-11.10).
+        let cpu_only = vec![ort::ep::CPU::default().build()];
+        let vision = match build_session(&vision_path, &providers) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("vision session build failed ({e}) — falling back to CPU");
+                build_session(&vision_path, &cpu_only)
+                    .map_err(|e| AppError::Ai(format!("vision: {e}")))?
+            }
+        };
+        let text = match build_session(&model_dir.join("text_model_int8.onnx"), &providers) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("text session build failed ({e}) — falling back to CPU");
+                build_session(&model_dir.join("text_model_int8.onnx"), &cpu_only)
+                    .map_err(|e| AppError::Ai(format!("text: {e}")))?
+            }
+        };
         let tokenizer = tokenizers::Tokenizer::from_file(model_dir.join("tokenizer.json"))
             .map_err(|e| AppError::Ai(format!("tokenizer: {e}")))?;
 

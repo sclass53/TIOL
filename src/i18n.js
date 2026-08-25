@@ -1,36 +1,28 @@
 // Minimal i18n module (no framework — LIMITS.md).
-// Locale files: src/locales/<lang>.json (flat-ish nested keys, vue-i18n style).
+// Messages are EMBEDDED at build time via locales/messages.js (generated
+// from locales/*.json by scripts/gen-messages.js) — no fetch() at startup:
+// the asset-protocol fetch failed on Windows AND macOS first load, leaving
+// raw i18n keys on the buttons until a manual language switch (C-11.11).
 // Language preference is persisted in SQLite via set_setting("language", ...).
 const { invoke } = window.__TAURI__.core;
+
+import { MESSAGES } from "./locales/messages.js";
 
 export const SUPPORTED = ["en-US", "zh-CN"];
 export const DEFAULT_LANG = "en-US";
 
 let current = DEFAULT_LANG;
-let messages = {};
+let messages = MESSAGES[DEFAULT_LANG];
 const listeners = [];
 
 export function currentLang() {
   return current;
 }
 
-async function loadMessages(lang) {
-  // Retry — the asset-protocol fetch can fail transiently at app startup
-  // (observed on macOS: buttons showed raw i18n keys until a manual
-  // language click re-fetched successfully, C-11.7).
-  let lastErr = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const res = await fetch(`locales/${lang}.json`);
-      if (!res.ok) throw new Error(`locale not found: ${lang} (HTTP ${res.status})`);
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
-    }
-  }
-  console.error(`loadMessages(${lang}) failed after retries:`, lastErr);
-  throw lastErr;
+function loadMessages(lang) {
+  const msgs = MESSAGES[lang];
+  if (!msgs) throw new Error(`locale not found: ${lang}`);
+  return msgs;
 }
 
 export function t(key, params) {
@@ -73,32 +65,11 @@ export function onLanguageChange(fn) {
 
 /**
  * Load default locale immediately (no flash), then apply the persisted
- * language from settings if it differs. On failure, retries in the
- * background until the locale arrives (UI self-heals — no raw keys).
+ * language from settings if it differs. Synchronous + embedded — can never
+ * fail on startup (C-11.11).
  */
 export async function initI18n() {
-  try {
-    await loadMessages(current);
-  } catch (e) {
-    // Fall back to retrying in the background (up to ~40s).
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      attempts++;
-      if (attempts > 20) {
-        clearInterval(timer);
-        return;
-      }
-      try {
-        await loadMessages(current);
-        clearInterval(timer);
-        applyStaticI18n();
-      } catch (e2) {
-        /* keep waiting */
-      }
-    }, 2000);
-    console.error("initI18n: initial locale load failed, retrying in background:", e);
-    throw e;
-  }
+  messages = loadMessages(current);
   let saved = null;
   try {
     saved = await invoke("get_setting", { key: "language" });
@@ -107,7 +78,7 @@ export async function initI18n() {
   }
   if (saved && SUPPORTED.includes(saved) && saved !== current) {
     current = saved;
-    messages = await loadMessages(current);
+    messages = loadMessages(current);
   }
 }
 
@@ -115,7 +86,7 @@ export async function initI18n() {
 export async function setLanguage(lang) {
   if (!SUPPORTED.includes(lang) || lang === current) return;
   current = lang;
-  messages = await loadMessages(lang);
+  messages = loadMessages(lang);
   try {
     await invoke("set_setting", { key: "language", value: lang });
   } catch (e) {

@@ -1,0 +1,222 @@
+// AUTO-GENERATED from locales/*.json — edit the JSON files, then run
+// `node scripts/gen-messages.js` to refresh this module (C-11.11).
+export const MESSAGES = {
+  "zh-CN": {
+    "app": {
+      "title": "TIOL - AI 本地照片管理"
+    },
+    "nav": {
+      "photos": "照片",
+      "folders": "目录",
+      "settings": "设置"
+    },
+    "search": {
+      "name": {
+        "placeholder": "搜索文件名"
+      },
+      "semantic": {
+        "placeholder": "语义搜索（自然语言）… 例如：一张日落的照片",
+        "error": "语义搜索失败",
+        "unavailable": "AI 尚未就绪，无法语义搜索"
+      },
+      "tag": {
+        "error": "标签搜索失败"
+      },
+      "mode": {
+        "semantic": "语义搜索",
+        "tag": "标签搜索"
+      }
+    },
+    "photos": {
+      "empty": "暂无照片 — 请添加目录或尝试搜索",
+      "status": {
+        "count": "{count} 张照片",
+        "partial": "{shown} / {total} 张照片"
+      }
+    },
+    "folders": {
+      "empty": "尚未添加目录",
+      "add": "+ 添加目录",
+      "refresh": "↻ 刷新",
+      "remove": "移除",
+      "count": "{count} 张",
+      "status": {
+        "count": "{count} 个文件夹"
+      }
+    },
+    "card": {
+      "edit": {
+        "title": "编辑标签",
+        "placeholder": "输入标签，用逗号分隔（AI 标签自动生成）：",
+        "save": "保存",
+        "cancel": "取消"
+      }
+    },
+    "menu": {
+      "reveal": "在文件资源管理器中显示"
+    },
+    "preview": {
+      "close": "关闭预览",
+      "error": "无法预览此文件"
+    },
+    "dialog": {
+      "confirmTitle": "确认操作",
+      "ok": "确定",
+      "cancel": "取消"
+    },
+    "tagging": {
+      "badge": "正在标记中",
+      "indexing": "正在索引",
+      "remaining": "剩余 {count} 张",
+      "indexingRemaining": "剩余 {count} 张"
+    },
+    "settings": {
+      "title": "设置",
+      "language": "语言",
+      "languageZh": "中文",
+      "languageEn": "English",
+      "hwDecode": "硬件加速解码",
+      "hwDecodeHint": "更改后需重启应用生效",
+      "restart": "重启应用",
+      "on": "开",
+      "off": "关",
+      "cacheLabel": "缩略图缓存",
+      "clearCache": "清除缓存",
+      "clearTags": "清除标记",
+      "clearTagsConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？",
+      "cacheCleared": "缓存已清除",
+      "modelStatus": "AI 模型",
+      "modelLocked": "已就绪",
+      "modelDownloading": "正在下载模型",
+      "modelError": "模型异常（AI 功能不可用）",
+      "aiProgress": "推理中 {done}/{remaining}",
+      "aiProvider": "推理后端",
+      "aiAuto": "自动",
+      "aiGpu": "GPU",
+      "aiCpu": "CPU",
+      "aiMlx": "Apple MLX",
+      "debug": "调试模式",
+      "tags": "自定义标签",
+      "tagsHint": "AI 零样本识别，无需训练；新标签立即对未标记照片生效",
+      "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
+      "tagThreshold": "匹配阈值",
+      "tagCount": "{count} 张",
+      "addTag": "+ 添加",
+      "removeTag": "删除",
+      "tagsEmpty": "尚未定义标签 — 添加后 AI 会自动为照片打标签",
+      "tagNameRequired": "请输入标签名称",
+      "gpu": "GPU 渲染器：{renderer}",
+      "gpuSoftware": "（软件渲染 — 硬件加速未生效）",
+      "gpuUnknown": "GPU 渲染器：无法检测"
+    }
+  },
+  "en-US": {
+    "app": {
+      "title": "TIOL - AI Local Photo Manager"
+    },
+    "nav": {
+      "photos": "Photos",
+      "folders": "Folders",
+      "settings": "Settings"
+    },
+    "search": {
+      "name": {
+        "placeholder": "Search for filenames"
+      },
+      "semantic": {
+        "placeholder": "Semantic search (natural language)… e.g. a photo of a sunset",
+        "error": "Semantic search failed",
+        "unavailable": "AI not ready for semantic search"
+      },
+      "tag": {
+        "error": "Tag search failed"
+      },
+      "mode": {
+        "semantic": "Semantic",
+        "tag": "Tag"
+      }
+    },
+    "photos": {
+      "empty": "No photos — add a folder or try searching",
+      "status": {
+        "count": "{count} photos",
+        "partial": "{shown} / {total} photos"
+      }
+    },
+    "folders": {
+      "empty": "No folders added yet",
+      "add": "+ Add Folder",
+      "refresh": "↻ Refresh",
+      "remove": "Remove",
+      "count": "{count} photos",
+      "status": {
+        "count": "{count} folders"
+      }
+    },
+    "card": {
+      "edit": {
+        "title": "Edit tags",
+        "placeholder": "Enter tags, comma-separated (AI tags are added automatically):",
+        "save": "Save",
+        "cancel": "Cancel"
+      }
+    },
+    "menu": {
+      "reveal": "Show in File Explorer"
+    },
+    "preview": {
+      "close": "Close preview",
+      "error": "Cannot preview this file"
+    },
+    "dialog": {
+      "confirmTitle": "Confirm action",
+      "ok": "OK",
+      "cancel": "Cancel"
+    },
+    "tagging": {
+      "badge": "Tagging in progress",
+      "indexing": "Indexing",
+      "remaining": "{count} left",
+      "indexingRemaining": "{count} left"
+    },
+    "settings": {
+      "title": "Settings",
+      "language": "Language",
+      "languageZh": "中文",
+      "languageEn": "English",
+      "hwDecode": "Hardware decoding",
+      "hwDecodeHint": "Restart the app for the change to take effect",
+      "restart": "Restart App",
+      "on": "On",
+      "off": "Off",
+      "cacheLabel": "Thumbnail cache",
+      "clearCache": "Clear cache",
+      "clearTags": "Clear tags",
+      "clearTagsConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?",
+      "cacheCleared": "Cache cleared",
+      "modelStatus": "AI models",
+      "modelLocked": "Ready",
+      "modelDownloading": "Downloading models",
+      "modelError": "Model error (AI unavailable)",
+      "aiProgress": "Inferring {done}/{remaining}",
+      "aiProvider": "Inference backend",
+      "aiAuto": "Auto",
+      "aiGpu": "GPU",
+      "aiCpu": "CPU",
+      "aiMlx": "Apple MLX",
+      "debug": "Debug mode",
+      "tags": "Custom tags",
+      "tagsHint": "Zero-shot AI recognition, no training; new tags apply to untagged photos immediately",
+      "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
+      "tagThreshold": "Threshold",
+      "tagCount": "{count} photos",
+      "addTag": "+ Add",
+      "removeTag": "Remove",
+      "tagsEmpty": "No tags defined — add one and the AI will tag your photos",
+      "tagNameRequired": "Please enter a tag name",
+      "gpu": "GPU renderer: {renderer}",
+      "gpuSoftware": "(software rendering — hardware acceleration inactive)",
+      "gpuUnknown": "GPU renderer: unable to detect"
+    }
+  }
+};
