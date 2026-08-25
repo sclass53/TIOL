@@ -406,7 +406,9 @@ impl Db {
     }
 
     /// Replace the manual (source=0) tags of a file with the given names.
-    /// Empty list clears them. The "unknown" auto tag is untouched.
+    /// Empty list clears them. The "unknown" auto tag is untouched unless a
+    /// real tag is present — a manually tagged photo must not keep the
+    /// "unknown" sentinel (C-13.1).
     pub fn replace_manual_tags(&self, file_id: i64, names: &[String]) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -414,6 +416,7 @@ impl Db {
             params![file_id],
         )
         .map_err(|e| e.to_string())?;
+        let mut added = 0usize;
         for name in names {
             let name = name.trim();
             if name.is_empty() {
@@ -432,8 +435,97 @@ impl Db {
                 params![file_id, tag_id],
             )
             .map_err(|e| e.to_string())?;
+            added += 1;
+        }
+        if added > 0 {
+            conn.execute(
+                "DELETE FROM file_tags WHERE file_id=?1 AND tag_id IN (SELECT id FROM tags WHERE name='unknown' COLLATE NOCASE)",
+                params![file_id],
+            )
+            .map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    /// Batch-add MANUAL tags (source=0) to many files at once (multi-select
+    /// "add tag" — APPEND semantics, existing tags are kept). Inserting a tag
+    /// a file already carries is a no-op replace. Any "unknown" sentinel on
+    /// the affected files is removed (C-13.1: manual tags displace it, same
+    /// rule as an AI match). Returns the number of (file × tag) rows written.
+    pub fn add_manual_tags_batch(
+        &self,
+        ids: &[i64],
+        names: &[String],
+    ) -> Result<usize, String> {
+        if ids.is_empty() || names.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut written = 0usize;
+        for raw in names {
+            let name = raw.trim();
+            if name.is_empty() {
+                continue;
+            }
+            conn.execute(
+                "INSERT OR IGNORE INTO tags(name) VALUES(?1)",
+                params![name],
+            )
+            .map_err(|e| e.to_string())?;
+            let tag_id: i64 = conn
+                .query_row("SELECT id FROM tags WHERE name=?1", params![name], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            for &fid in ids {
+                conn.execute(
+                    "INSERT OR REPLACE INTO file_tags(file_id, tag_id, confidence, source) VALUES(?1, ?2, 1.0, 0)",
+                    params![fid, tag_id],
+                )
+                .map_err(|e| e.to_string())?;
+                written += 1;
+            }
+        }
+        // Manual tags displace the "unknown" sentinel (C-13.1) — a photo that
+        // carries at least one real tag must not keep it.
+        let ph = vec!["?"; ids.len()].join(",");
+        conn.execute(
+            &format!(
+                "DELETE FROM file_tags WHERE tag_id IN (SELECT id FROM tags WHERE name='unknown' COLLATE NOCASE) AND file_id IN ({ph})"
+            ),
+            rusqlite::params_from_iter(ids.iter()),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(written)
+    }
+
+    /// Every tag name the user could add: tags ever applied (manual or AI)
+    /// PLUS user-defined custom tags that are not applied anywhere yet
+    /// (C-13 fix: add_custom_tag only writes custom_tags, so an unused
+    /// custom tag never appears in `tags` and must be merged in). Sorted by
+    /// most-used first. The "unknown" sentinel is excluded.
+    pub fn get_all_tag_names(&self) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT name, MAX(c) FROM (
+                   SELECT t.name AS name, COUNT(DISTINCT ft.file_id) AS c
+                   FROM tags t LEFT JOIN file_tags ft ON ft.tag_id = t.id
+                   WHERE lower(t.name) != 'unknown'
+                   GROUP BY t.name
+                   UNION ALL
+                   SELECT ct.name AS name, 0 AS c FROM custom_tags ct
+                   WHERE lower(ct.name) != 'unknown'
+                 )
+                 GROUP BY name ORDER BY MAX(c) DESC, name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
     }
 
     /// Whether a file already has a stored SigLIP embedding (avoids
@@ -1028,6 +1120,64 @@ mod tests {
         let missing = db.get_files_missing_any_tag(100, 0).unwrap();
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].0, files[1].id);
+    }
+
+    #[test]
+    fn manual_tags_batch_and_name_list() {
+        let (_dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        std::fs::write(folder.path().join("b.jpg"), b"y").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let files = db.get_photos(Some(fid)).unwrap();
+        let ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+
+        // Batch-add two tags to both files (append semantics).
+        let n = db
+            .add_manual_tags_batch(&ids, &["cat".to_string(), "dog".to_string()])
+            .unwrap();
+        assert_eq!(n, 4);
+        for f in &files {
+            let tags = db.get_file_tags(f.id).unwrap();
+            assert_eq!(tags.len(), 2);
+            assert!(tags.iter().all(|t| t.source == 0));
+        }
+        // Idempotent re-add: no duplicate rows.
+        let n2 = db
+            .add_manual_tags_batch(&ids, &["cat".to_string()])
+            .unwrap();
+        assert_eq!(n2, 2);
+        assert_eq!(db.get_file_tags(files[0].id).unwrap().len(), 2);
+
+        // Manual tags displace the "unknown" sentinel (C-13.1): a photo with
+        // unknown that gets manually tagged loses it.
+        db.set_file_tags(files[0].id, &[("unknown".to_string(), 1.0)], 1).unwrap();
+        db.add_manual_tags_batch(&[files[0].id], &["fish".to_string()]).unwrap();
+        let tags = db.get_file_tags(files[0].id).unwrap();
+        assert!(tags.iter().all(|t| t.name != "unknown"));
+        // Same via the edit-dialog path (replace_manual_tags).
+        db.set_file_tags(files[0].id, &[("unknown".to_string(), 1.0)], 1).unwrap();
+        db.replace_manual_tags(files[0].id, &["bird".to_string()]).unwrap();
+        let tags = db.get_file_tags(files[0].id).unwrap();
+        assert!(tags.iter().all(|t| t.name != "unknown"));
+        // Clearing ALL manual tags keeps the sentinel (nothing real left).
+        db.set_file_tags(files[0].id, &[("unknown".to_string(), 1.0)], 1).unwrap();
+        db.replace_manual_tags(files[0].id, &[]).unwrap();
+        let tags = db.get_file_tags(files[0].id).unwrap();
+        assert!(tags.iter().any(|t| t.name == "unknown"));
+
+        // Name list: most-used first, "unknown" sentinel excluded, and
+        // custom tags that were never applied still show up (C-13 fix).
+        db.set_file_tags(files[0].id, &[("unknown".to_string(), 1.0)], 1).unwrap();
+        db.set_file_tags(files[0].id, &[("cat".to_string(), 0.9)], 1).unwrap(); // reuses the cat row
+        db.add_custom_tag("test", &[0.1, 0.2, 0.3], 0.3).unwrap(); // defined, applied nowhere
+        let names = db.get_all_tag_names().unwrap();
+        assert!(names.contains(&"cat".to_string()));
+        assert!(names.contains(&"dog".to_string()));
+        assert!(names.contains(&"test".to_string()));
+        assert!(!names.iter().any(|n| n == "unknown"));
+        assert_eq!(names[0], "cat"); // cat is on both files (2 uses), dog on 1, test on 0
     }
 
     #[test]

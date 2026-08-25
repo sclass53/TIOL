@@ -64,6 +64,17 @@ const els = {
   searchInput: document.getElementById("search-input"),
   searchMode: document.getElementById("search-mode"),
   semanticSearchInput: document.getElementById("semantic-search-input"),
+  btnSelectMode: document.getElementById("btn-select-mode"),
+  selectionBar: document.getElementById("selection-bar"),
+  selectionCount: document.getElementById("selection-count"),
+  selectionHint: document.getElementById("selection-hint"),
+  btnSelectionTag: document.getElementById("btn-selection-tag"),
+  btnSelectionCancel: document.getElementById("btn-selection-cancel"),
+  tagpickOverlay: document.getElementById("tagpick-overlay"),
+  tagpickList: document.getElementById("tagpick-list"),
+  tagpickCancel: document.getElementById("tagpick-cancel"),
+  editChips: document.getElementById("edit-chips"),
+  editSuggest: document.getElementById("edit-suggest"),
   photoGrid: document.getElementById("photo-grid"),
   photoStatus: document.getElementById("photo-status"),
   folderList: document.getElementById("folder-list"),
@@ -91,6 +102,8 @@ function switchView(name) {
   els.navFolders.classList.toggle("sidebar__btn--active", isFolders);
   els.navTags.classList.toggle("sidebar__btn--active", isTags);
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
+  // Leaving the photos view exits multi-select mode (C-13).
+  if (!isPhotos && selectMode) setSelectMode(false);
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos) requestAnimationFrame(fillGridIfNeeded);
 }
@@ -585,6 +598,228 @@ function renderChunk(limit = CHUNK_APPEND) {
       : t("photos.status.count", { count: total });
 }
 
+// ---------------------------------------------------------------------------
+// Multi-select mode (phone-gallery style, C-13): toolbar button toggles it;
+// click toggles one card, drag over the grid rubber-bands a range. Selected
+// photos can get ONE existing tag appended via the bottom bar -> picker.
+// ---------------------------------------------------------------------------
+let selectMode = false;
+const selectedIds = new Set();
+
+function setSelectMode(on) {
+  if (selectMode === on) return;
+  selectMode = on;
+  els.btnSelectMode.textContent = t(on ? "photos.selectDone" : "photos.selectMode");
+  els.btnSelectMode.classList.toggle("searchbar__select--active", on);
+  els.photoGrid.classList.toggle("selecting", on);
+  els.selectionBar.hidden = !on;
+  if (!on) {
+    selectedIds.clear();
+    hideSelectionHint();
+  }
+  // Update already-rendered cards in place (no re-render: keeps scroll pos).
+  for (const card of els.photoGrid.children) {
+    if (!card._photo) continue;
+    card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
+    const cb = card.querySelector(".card__check");
+    if (cb) cb.hidden = !on;
+  }
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  if (!selectMode) return;
+  const n = selectedIds.size;
+  els.selectionCount.textContent = t("photos.selectedCount", { count: n });
+  els.btnSelectionTag.disabled = n === 0;
+}
+
+function toggleSelect(photo) {
+  if (selectedIds.has(photo.id)) selectedIds.delete(photo.id);
+  else selectedIds.add(photo.id);
+  if (photo._card) {
+    photo._card.classList.toggle("card--selected", selectedIds.has(photo.id));
+  }
+  updateSelectionBar();
+}
+
+let selectionHintTimer = null;
+function showSelectionHint(text) {
+  els.selectionHint.textContent = text;
+  els.selectionHint.hidden = false;
+  clearTimeout(selectionHintTimer);
+  selectionHintTimer = setTimeout(hideSelectionHint, 2500);
+}
+function hideSelectionHint() {
+  els.selectionHint.hidden = true;
+}
+
+els.btnSelectMode.addEventListener("click", () => setSelectMode(!selectMode));
+els.btnSelectionCancel.addEventListener("click", () => setSelectMode(false));
+
+// Esc leaves select mode (after closing any open overlay first).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !selectMode) return;
+  if (!els.tagpickOverlay.hidden) {
+    els.tagpickOverlay.hidden = true;
+    return;
+  }
+  if (!els.editOverlay.hidden) {
+    closeEditDialog(false);
+    return;
+  }
+  if (!preview.els.overlay.hidden) {
+    preview.close();
+    return;
+  }
+  setSelectMode(false);
+});
+
+// Drag-to-select: press anywhere on the grid and drag — cards intersecting
+// the rubber band are selected on release. A plain click (no drag) falls
+// through to the card click handler which toggles that one card.
+let dragSel = null;
+els.photoGrid.addEventListener("mousedown", (e) => {
+  if (!selectMode || e.button !== 0) return;
+  if (e.target.closest("button, input, select, .card__edit")) return;
+  const gridRect = els.photoGrid.getBoundingClientRect();
+  // Don't hijack the vertical scrollbar.
+  if (e.clientX > gridRect.left + gridRect.width - 16) return;
+  e.preventDefault(); // no text selection / native image drag
+  const box = document.createElement("div");
+  box.className = "selection-box";
+  els.photoGrid.appendChild(box);
+  const startX = e.clientX - gridRect.left;
+  const startY = e.clientY - gridRect.top;
+  dragSel = { startX, startY, box, gridRect, moved: false, last: null };
+  const onMove = (ev) => {
+    if (!dragSel) return;
+    const x = ev.clientX - dragSel.gridRect.left;
+    const y = ev.clientY - dragSel.gridRect.top;
+    const w = x - dragSel.startX;
+    const h = y - dragSel.startY;
+    if (Math.abs(w) > 4 || Math.abs(h) > 4) dragSel.moved = true;
+    if (!dragSel.moved) return; // keep the box hidden until a real drag
+    const L = Math.min(dragSel.startX, x);
+    const T = Math.min(dragSel.startY, y);
+    const R = Math.max(dragSel.startX, x);
+    const B = Math.max(dragSel.startY, y);
+    dragSel.last = { L, T, R, B };
+    dragSel.box.style.left = L + "px";
+    dragSel.box.style.top = T + "px";
+    dragSel.box.style.width = R - L + "px";
+    dragSel.box.style.height = B - T + "px";
+    // Live highlight of intersecting cards (grid-relative coords).
+    for (const card of els.photoGrid.children) {
+      if (!card._photo) continue;
+      const r = card.getBoundingClientRect();
+      const hit =
+        r.left - dragSel.gridRect.left < R &&
+        r.right - dragSel.gridRect.left > L &&
+        r.top - dragSel.gridRect.top < B &&
+        r.bottom - dragSel.gridRect.top > T;
+      card.classList.toggle("card--sel-hover", hit);
+    }
+  };
+  const onUp = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    const d = dragSel;
+    dragSel = null;
+    box.remove();
+    for (const card of els.photoGrid.children) {
+      card.classList.remove("card--sel-hover");
+    }
+    if (!d || !d.moved) return; // plain click → card click toggles it
+    const { L, T, R, B } = d.last;
+    for (const card of els.photoGrid.children) {
+      if (!card._photo) continue;
+      const r = card.getBoundingClientRect();
+      const hit =
+        r.left - d.gridRect.left < R &&
+        r.right - d.gridRect.left > L &&
+        r.top - d.gridRect.top < B &&
+        r.bottom - d.gridRect.top > T;
+      if (hit && !selectedIds.has(card._photo.id)) {
+        selectedIds.add(card._photo.id);
+        card.classList.add("card--selected");
+      }
+    }
+    updateSelectionBar();
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+});
+
+// "Add tag" for the selection: pick ONE existing tag, appended to all
+// selected photos (manual tags, existing tags untouched). The panel has a
+// live search box for large tag sets (C-13.3).
+let tagpickAll = [];
+const tagpickSearch = document.getElementById("tagpick-search");
+
+function renderTagPickList() {
+  els.tagpickList.textContent = "";
+  const q = tagpickSearch.value.trim().toLowerCase();
+  const shown = tagpickAll.filter((n) => !q || n.toLowerCase().includes(q));
+  if (!tagpickAll.length) {
+    const d = document.createElement("div");
+    d.className = "tagpick-empty";
+    d.textContent = t("tags.pickEmpty");
+    els.tagpickList.appendChild(d);
+    return;
+  }
+  if (!shown.length) {
+    const d = document.createElement("div");
+    d.className = "tagpick-empty";
+    d.textContent = t("tags.pickNoMatch");
+    els.tagpickList.appendChild(d);
+    return;
+  }
+  for (const n of shown) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn--ghost tagpick-item";
+    btn.textContent = n;
+    btn.addEventListener("click", async () => {
+      const ids = [...selectedIds];
+      els.tagpickOverlay.hidden = true;
+      try {
+        await invoke("add_tags_to_files", { fileIds: ids, tags: [n] });
+        showSelectionHint(t("photos.tagsAdded", { count: ids.length, tag: n }));
+        // Update card tag lines in place (no re-render: keeps scroll pos).
+        for (const p of currentPhotos) {
+          if (selectedIds.has(p.id) && !p.tags.includes(n)) {
+            p.tags.push(n);
+            if (p._card) renderCardMeta(p._card, p);
+          }
+        }
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+    els.tagpickList.appendChild(btn);
+  }
+}
+tagpickSearch.addEventListener("input", renderTagPickList);
+
+els.btnSelectionTag.addEventListener("click", async () => {
+  if (!selectedIds.size) return;
+  try {
+    tagpickAll = await invoke("get_all_tags");
+  } catch (e) {
+    alert(String(e));
+    return;
+  }
+  tagpickSearch.value = "";
+  renderTagPickList();
+  els.tagpickOverlay.hidden = false;
+});
+els.tagpickCancel.addEventListener("click", () => {
+  els.tagpickOverlay.hidden = true;
+});
+els.tagpickOverlay.addEventListener("click", (e) => {
+  if (e.target === els.tagpickOverlay) els.tagpickOverlay.hidden = true;
+});
+
 // Keep filling until the viewport is covered (only while photos view visible).
 // Bounded per frame: at most 3 chunks, continue on the next frame, so a large
 // library can never block the UI with a synchronous render burst.
@@ -737,25 +972,106 @@ function pumpThumbs() {
   }
 }
 
-// --- tag edit dialog (comma-separated, replaces the description editor) ---
+// --- tag edit dialog (C-13): current tags as chips + picker of existing
+// tags to add (one click per tag); a free-text input creates new tags.
 let editPhoto = null;
+let editManual = []; // manual (source=0) tag names — what Save applies
+let editAiTags = []; // AI (source=1) tag names — shown read-only
+let editSuggestAll = []; // every existing tag name (get_all_tags)
 
 async function openEditDialog(photo) {
   editPhoto = photo;
-  // Prefill with the file's MANUAL tags (source=0) only.
-  let manual = [];
+  editManual = [];
+  editAiTags = [];
+  let tags = [];
   try {
-    const tags = await invoke("get_file_tags", { fileId: photo.id });
-    manual = (tags || [])
-      .filter((tg) => tg.source === 0)
-      .map((tg) => tg.name);
+    tags = await invoke("get_file_tags", { fileId: photo.id });
   } catch (e) {
     reportJs("get-tags", String(e));
   }
-  els.editInput.value = manual.join(", ");
+  editManual = (tags || [])
+    .filter((tg) => tg.source === 0)
+    .map((tg) => tg.name);
+  editAiTags = (tags || [])
+    .filter((tg) => tg.source === 1)
+    .map((tg) => tg.name);
+  try {
+    editSuggestAll = await invoke("get_all_tags");
+  } catch (e) {
+    editSuggestAll = [];
+  }
+  renderEditChips();
+  renderEditSuggest();
+  els.editInput.value = "";
   els.editOverlay.hidden = false;
   els.editInput.focus();
-  els.editInput.select();
+}
+
+function renderEditChips() {
+  els.editChips.textContent = "";
+  for (const n of editManual) {
+    const chip = document.createElement("span");
+    chip.className = "edit-chip";
+    const txt = document.createElement("span");
+    txt.textContent = n;
+    const del = document.createElement("button");
+    del.className = "edit-chip__del";
+    del.textContent = "×";
+    del.title = t("card.edit.remove");
+    del.addEventListener("click", () => {
+      editManual = editManual.filter((x) => x !== n);
+      renderEditChips();
+      renderEditSuggest();
+    });
+    chip.appendChild(txt);
+    chip.appendChild(del);
+    els.editChips.appendChild(chip);
+  }
+  for (const n of editAiTags) {
+    const chip = document.createElement("span");
+    chip.className = "edit-chip edit-chip--ai";
+    chip.textContent = n;
+    els.editChips.appendChild(chip);
+  }
+  if (!editManual.length && !editAiTags.length) {
+    const d = document.createElement("span");
+    d.className = "tagpick-empty";
+    d.textContent = t("card.edit.noTags");
+    els.editChips.appendChild(d);
+  }
+}
+
+function renderEditSuggest() {
+  els.editSuggest.textContent = "";
+  const candidates = editSuggestAll.filter(
+    (n) => !editManual.includes(n) && !editAiTags.includes(n)
+  );
+  if (!candidates.length) {
+    const d = document.createElement("div");
+    d.className = "tagpick-empty";
+    d.textContent = t("card.edit.noSuggest");
+    els.editSuggest.appendChild(d);
+    return;
+  }
+  for (const n of candidates) {
+    const btn = document.createElement("button");
+    btn.className = "edit-suggest__item";
+    btn.textContent = `+ ${n}`;
+    btn.addEventListener("click", () => {
+      if (!editManual.includes(n)) editManual.push(n);
+      renderEditChips();
+      renderEditSuggest();
+    });
+    els.editSuggest.appendChild(btn);
+  }
+}
+
+function addEditTag(name) {
+  const n = name.trim();
+  if (!n) return;
+  if (!editManual.includes(n)) editManual.push(n);
+  renderEditChips();
+  renderEditSuggest();
 }
 
 async function closeEditDialog(save) {
@@ -767,11 +1083,7 @@ async function closeEditDialog(save) {
   const p = editPhoto;
   editPhoto = null;
   try {
-    const tags = els.editInput.value
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    const updated = await invoke("update_tags", { fileId: p.id, tags });
+    const updated = await invoke("update_tags", { fileId: p.id, tags: editManual });
     p.tags = updated.tags || [];
     if (p._card) renderCardMeta(p._card, p);
     runSearch();
@@ -800,9 +1112,15 @@ els.editCancel.addEventListener("click", () => closeEditDialog(false));
 els.editOverlay.addEventListener("click", (e) => {
   if (e.target === els.editOverlay) closeEditDialog(false);
 });
+// Enter adds the typed tag to the current list (Save applies everything);
+// Escape closes without saving.
 els.editInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") closeEditDialog(true);
-  if (e.key === "Escape") closeEditDialog(false);
+  if (e.key === "Enter") {
+    addEditTag(els.editInput.value);
+    els.editInput.value = "";
+  } else if (e.key === "Escape") {
+    closeEditDialog(false);
+  }
 });
 
 function buildCard(p) {
@@ -813,6 +1131,7 @@ function buildCard(p) {
   const img = document.createElement("img");
   img.alt = p.filename;
   img.loading = "lazy";
+  img.draggable = false;
   img.onerror = () => {
     thumb.textContent = p.filename;
     thumb.classList.add("card__thumb--placeholder");
@@ -821,6 +1140,11 @@ function buildCard(p) {
   thumb.appendChild(img);
   thumb._img = img;
   thumb._photo = p;
+  // Multi-select checkbox (top-right, visible in select mode only).
+  const check = document.createElement("span");
+  check.className = "card__check";
+  check.hidden = !selectMode;
+  thumb.appendChild(check);
   // Debug-mode AI confidence badge (semantic search fills FileRecord.score).
   if (debugMode && p.score != null) {
     const badge = document.createElement("span");
@@ -831,6 +1155,7 @@ function buildCard(p) {
   thumbObserver.observe(thumb);
   card._photo = p;
   card._img = img;
+  card.classList.toggle("card--selected", selectedIds.has(p.id));
 
   const meta = document.createElement("div");
   meta.className = "card__meta";
@@ -866,6 +1191,11 @@ function buildCard(p) {
   // setThumb must never prevent the preview from opening.
   card.style.cursor = "pointer";
   card.addEventListener("click", () => {
+    // Select mode: clicking toggles selection instead of opening the preview.
+    if (selectMode) {
+      toggleSelect(p);
+      return;
+    }
     try {
       setThumb(img, p);
     } catch (e) {

@@ -27,6 +27,11 @@
   },
   "photos": {
     "empty": "暂无照片 — 请添加目录或尝试搜索",
+    "selectMode": "多选",
+    "selectDone": "完成",
+    "selectedCount": "已选 {count} 张",
+    "addTagSelected": "添加标签",
+    "tagsAdded": "已为 {count} 张照片添加「{tag}」",
     "status": {
       "count": "{count} 张照片",
       "partial": "{shown} / {total} 张照片"
@@ -45,7 +50,12 @@
   "card": {
     "edit": {
       "title": "编辑标签",
-      "placeholder": "输入标签，用逗号分隔（AI 标签由「AI 标记」添加）：",
+      "current": "当前标签",
+      "suggest": "从已有标签添加",
+      "noTags": "暂无标签",
+      "noSuggest": "没有更多可添加的标签 — 可在下方输入新标签",
+      "remove": "移除标签",
+      "placeholder": "输入新标签名称后按回车",
       "save": "保存",
       "cancel": "取消"
     }
@@ -71,6 +81,10 @@
   "tags": {
     "title": "自定义标签",
     "hint": "点击「AI 标记」按全部当前标签为照片打标——新增标签与新增照片都会包含。",
+    "pickTitle": "为选中的照片添加标签",
+    "pickSearch": "搜索标签…",
+    "pickNoMatch": "没有匹配的标签",
+    "pickEmpty": "尚未定义标签 — 请先在标签页添加",
     "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
     "tagThreshold": "匹配阈值",
     "tagCount": "{count} 张",

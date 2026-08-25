@@ -134,9 +134,32 @@ html, body {
   cursor: pointer;
 }
 
+/* "Select" button at the right end of the search bar (C-13): solid BLUE
+   like the AI Tagging primary button (no ghost state — always colored),
+   same size as every other button. Active (select mode) keeps the same
+   blue, only a subtle inner ring marks it. */
+.btn.searchbar__select {
+  flex: 0 0 auto;
+  height: 32px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+.btn.searchbar__select:hover {
+  background: #0a76e8;
+  border-color: #0a76e8;
+}
+.btn.searchbar__select--active,
+.btn.searchbar__select--active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
 /* Photo grid */
 .grid {
   flex: 1;
+  position: relative; /* anchors the drag-selection box (C-13) */
   overflow-y: auto;
   padding: 16px;
   display: flex;
@@ -191,6 +214,55 @@ html, body {
   z-index: 2;
   pointer-events: none;
   white-space: nowrap;
+}
+
+/* Multi-select checkbox (top-right of the card, select mode only, C-13) */
+.card__check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #fff;
+}
+/* display:flex above must NOT override the hidden attribute — the circles
+   only exist in select mode (same trap as the tagging badge, C-10.1). */
+.card__check[hidden] {
+  display: none;
+}
+.card--selected .card__check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.card--selected .card__check::after {
+  content: "✓";
+}
+.card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.card--sel-hover {
+  border-color: var(--accent);
+  opacity: 0.85;
+}
+
+/* Rubber-band drag selection box (C-13) */
+.selection-box {
+  position: absolute;
+  z-index: 50;
+  border: 1px dashed var(--accent);
+  background: rgba(10, 132, 255, 0.12);
+  pointer-events: none;
+  border-radius: 2px;
 }
 
 .card__thumb--placeholder {
@@ -338,6 +410,37 @@ html, body {
   padding: 0 12px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+/* Multi-select bottom bar (C-13): fixed over the photos view */
+.selection-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 40px;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  border-radius: 24px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.selection-bar[hidden] {
+  display: none;
+}
+.selection-bar__count {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.selection-bar__hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* Empty */
@@ -576,6 +679,8 @@ html, body {
 .dialog {
   width: 420px;
   max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--separator);
   border-radius: var(--radius);
@@ -589,6 +694,97 @@ html, body {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.dialog__label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Edit dialog: current tags as removable chips (C-13) — scrolls when the
+   photo has many tags so the dialog never outgrows the screen */
+.edit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.edit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  border-radius: 12px;
+  padding: 3px 6px 3px 10px;
+}
+.edit-chip--ai {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--separator);
+}
+.edit-chip__del {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 3px;
+  border-radius: 50%;
+}
+.edit-chip__del:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Edit dialog: picker of existing tags (C-13) */
+.edit-suggest {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius);
+  padding: 6px;
+  background: var(--bg-surface);
+}
+.edit-suggest__item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.edit-suggest__item:hover {
+  background: var(--bg-elevated);
+}
+
+/* Multi-select "add tag" panel list (C-13) */
+.tagpick-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 40px;
+}
+.tagpick-item {
+  text-align: left;
+  justify-content: flex-start;
+}
+.tagpick-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 2px;
 }
 
 .dialog__input {
@@ -667,13 +863,16 @@ html, body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 0 12px;
   border-bottom: 1px solid var(--separator);
 }
 
 .preview__name {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
   font-size: 13px;
   color: var(--text-primary);
   white-space: nowrap;

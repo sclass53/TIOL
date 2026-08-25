@@ -528,6 +528,33 @@ fn get_custom_tags(state: tauri::State<AppState>) -> Result<Vec<db::CustomTag>, 
     state.db.get_custom_tags()
 }
 
+/// Every tag name ever used (most-used first, no "unknown") — the picker
+/// lists for the card edit dialog and the multi-select "add tag" panel.
+#[tauri::command]
+fn get_all_tags(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
+    state.db.get_all_tag_names()
+}
+
+/// Multi-select "add tag" (C-13): append the given tags as MANUAL tags
+/// (source=0) to every selected file. Existing tags are kept.
+#[tauri::command]
+fn add_tags_to_files(
+    state: tauri::State<AppState>,
+    file_ids: Vec<i64>,
+    tags: Vec<String>,
+) -> Result<usize, String> {
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    let tags: Vec<String> = tags.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+    if tags.is_empty() {
+        return Err("no tags given".to_string());
+    }
+    log::info!("add_tags_to_files: {} files, tags {:?}", file_ids.len(), tags);
+    state.db.add_manual_tags_batch(&file_ids, &tags)?;
+    Ok(file_ids.len())
+}
+
 /// Manual "AI Tagging" (C-12): the ONLY way tagging starts. Enqueues a
 /// full tag-list check (AITask::tag_all) for every file missing at least
 /// one currently-defined custom tag — this covers newly added tags AND
@@ -1101,6 +1128,8 @@ fn main() {
             add_custom_tag,
             delete_custom_tag,
             get_custom_tags,
+            get_all_tags,
+            add_tags_to_files,
             run_ai_tagging,
             clear_all_tags,
             get_ai_status,

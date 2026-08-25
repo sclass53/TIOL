@@ -27,6 +27,11 @@
   },
   "photos": {
     "empty": "No photos — add a folder or try searching",
+    "selectMode": "Select",
+    "selectDone": "Done",
+    "selectedCount": "{count} selected",
+    "addTagSelected": "Add tag",
+    "tagsAdded": "“{tag}” added to {count} photos",
     "status": {
       "count": "{count} photos",
       "partial": "{shown} / {total} photos"
@@ -45,7 +50,12 @@
   "card": {
     "edit": {
       "title": "Edit tags",
-      "placeholder": "Enter tags, comma-separated (AI tags are added by “AI Tagging”):",
+      "current": "Current tags",
+      "suggest": "Add from existing tags",
+      "noTags": "No tags yet",
+      "noSuggest": "No more tags to add — type a new one below",
+      "remove": "Remove tag",
+      "placeholder": "Type a new tag name and press Enter",
       "save": "Save",
       "cancel": "Cancel"
     }
@@ -71,6 +81,10 @@
   "tags": {
     "title": "Custom tags",
     "hint": "Click “AI Tagging” to tag photos with all current tags — new tags and new photos are included.",
+    "pickTitle": "Add tag to selected photos",
+    "pickSearch": "Search tags…",
+    "pickNoMatch": "No matching tags",
+    "pickEmpty": "No tags defined — add one in the Tags tab first",
     "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
     "tagThreshold": "Threshold",
     "tagCount": "{count} photos",

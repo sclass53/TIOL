@@ -13,6 +13,7 @@ Privacy-first, local-first photo management. All photos stay on your own hard dr
 - 🏷️ **Custom Labels**: AI tagging – enter any labels (Chinese or English) in the Tags tab; files are indexed automatically on changes, tagging runs on demand via the “AI Tagging” button
 - 🖥️ **AI Engine Options**: auto / GPU / CPU / Apple CoreML (macOS native Neural Engine acceleration) – fully local
 - 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
+- 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML, and many more
 
 ## Quick Start
 

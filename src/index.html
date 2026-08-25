@@ -25,8 +25,15 @@
             <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
           </select>
           <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
+          <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="photo-grid"></div>
+        <div class="selection-bar" id="selection-bar" hidden>
+          <span class="selection-bar__count" id="selection-count"></span>
+          <span class="selection-bar__hint" id="selection-hint" hidden></span>
+          <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+          <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
+        </div>
         <div class="statusbar" id="photo-status">0 photos</div>
       </section>
 
@@ -111,8 +118,8 @@
   <div class="preview-overlay" id="preview-overlay" hidden>
     <div class="preview" id="preview-panel">
       <div class="preview__header">
-        <span class="preview__name" id="preview-name"></span>
         <button class="preview__close" id="preview-close" data-i18n-title="preview.close" aria-label="Close">✕</button>
+        <span class="preview__name" id="preview-name"></span>
       </div>
       <div class="preview__body">
         <img id="preview-img" alt="" />
@@ -122,14 +129,30 @@
     </div>
   </div>
 
-  <!-- Tag edit dialog (comma-separated, replaces the old description dialog) -->
+  <!-- Tag edit dialog (list of current tags + picker of existing tags) -->
   <div class="dialog-overlay" id="edit-overlay" hidden>
     <div class="dialog" role="dialog" aria-modal="true">
       <div class="dialog__title" data-i18n="card.edit.title">编辑标签</div>
+      <div class="dialog__label" data-i18n="card.edit.current">当前标签</div>
+      <div class="edit-chips" id="edit-chips"></div>
+      <div class="dialog__label" data-i18n="card.edit.suggest">从已有标签添加</div>
+      <div class="edit-suggest" id="edit-suggest"></div>
       <input class="dialog__input" id="edit-input" type="text" data-i18n-placeholder="card.edit.placeholder" />
       <div class="dialog__actions">
         <button class="btn btn--ghost" id="edit-cancel" data-i18n="card.edit.cancel">取消</button>
         <button class="btn btn--primary" id="edit-save" data-i18n="card.edit.save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-select "add tag" panel (pick one existing tag for the selection) -->
+  <div class="dialog-overlay" id="tagpick-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog__title" data-i18n="tags.pickTitle">为选中的照片添加标签</div>
+      <input class="dialog__input" id="tagpick-search" type="text" data-i18n-placeholder="tags.pickSearch" />
+      <div class="tagpick-list" id="tagpick-list"></div>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" id="tagpick-cancel" data-i18n="dialog.cancel">取消</button>
       </div>
     </div>
   </div>

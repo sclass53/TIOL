@@ -30,6 +30,11 @@ export const MESSAGES = {
     },
     "photos": {
       "empty": "暂无照片 — 请添加目录或尝试搜索",
+      "selectMode": "多选",
+      "selectDone": "完成",
+      "selectedCount": "已选 {count} 张",
+      "addTagSelected": "添加标签",
+      "tagsAdded": "已为 {count} 张照片添加「{tag}」",
       "status": {
         "count": "{count} 张照片",
         "partial": "{shown} / {total} 张照片"
@@ -48,7 +53,12 @@ export const MESSAGES = {
     "card": {
       "edit": {
         "title": "编辑标签",
-        "placeholder": "输入标签，用逗号分隔（AI 标签由「AI 标记」添加）：",
+        "current": "当前标签",
+        "suggest": "从已有标签添加",
+        "noTags": "暂无标签",
+        "noSuggest": "没有更多可添加的标签 — 可在下方输入新标签",
+        "remove": "移除标签",
+        "placeholder": "输入新标签名称后按回车",
         "save": "保存",
         "cancel": "取消"
       }
@@ -74,6 +84,10 @@ export const MESSAGES = {
     "tags": {
       "title": "自定义标签",
       "hint": "点击「AI 标记」按全部当前标签为照片打标——新增标签与新增照片都会包含。",
+      "pickTitle": "为选中的照片添加标签",
+      "pickSearch": "搜索标签…",
+      "pickNoMatch": "没有匹配的标签",
+      "pickEmpty": "尚未定义标签 — 请先在标签页添加",
       "tagPlaceholder": "标签名称，如：飞机 / sunset / 长曝光",
       "tagThreshold": "匹配阈值",
       "tagCount": "{count} 张",
@@ -145,6 +159,11 @@ export const MESSAGES = {
     },
     "photos": {
       "empty": "No photos — add a folder or try searching",
+      "selectMode": "Select",
+      "selectDone": "Done",
+      "selectedCount": "{count} selected",
+      "addTagSelected": "Add tag",
+      "tagsAdded": "“{tag}” added to {count} photos",
       "status": {
         "count": "{count} photos",
         "partial": "{shown} / {total} photos"
@@ -163,7 +182,12 @@ export const MESSAGES = {
     "card": {
       "edit": {
         "title": "Edit tags",
-        "placeholder": "Enter tags, comma-separated (AI tags are added by “AI Tagging”):",
+        "current": "Current tags",
+        "suggest": "Add from existing tags",
+        "noTags": "No tags yet",
+        "noSuggest": "No more tags to add — type a new one below",
+        "remove": "Remove tag",
+        "placeholder": "Type a new tag name and press Enter",
         "save": "Save",
         "cancel": "Cancel"
       }
@@ -189,6 +213,10 @@ export const MESSAGES = {
     "tags": {
       "title": "Custom tags",
       "hint": "Click “AI Tagging” to tag photos with all current tags — new tags and new photos are included.",
+      "pickTitle": "Add tag to selected photos",
+      "pickSearch": "Search tags…",
+      "pickNoMatch": "No matching tags",
+      "pickEmpty": "No tags defined — add one in the Tags tab first",
       "tagPlaceholder": "Tag name, e.g. plane / sunset / long-exposure",
       "tagThreshold": "Threshold",
       "tagCount": "{count} photos",
