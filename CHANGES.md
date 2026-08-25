@@ -25,6 +25,16 @@
 - `.gitignore` 扩充：新增 `.cargo-home/`、`.cargo/`、`models-download/`、`src-tauri/resources/`（运行时下载模型不入库）、`*.part`、`*.bundled.tmp`、`*.log`、`dev-log.txt`、`npm-trace.txt`、`test_imgs/`、系统/编辑器杂项（.DS_Store/Thumbs.db/.idea/.vscode）。
 - **UI 滚动修复（C-10.5 附）**：设置页与目录页内容超出窗口时无法滚动/被压缩——`.settings` 与 `.folder-list` 补 `flex:1; min-height:0; overflow-y:auto`（flex 列子项默认 `min-height:auto` 阻止收缩导致溢出被裁剪），并加 `.settings > * { flex-shrink:0 }` 防止子项（如调试日志面板）被压缩——容器滚动而非内容挤压。
 
+## C-10.6 · 2025-07 — 跨平台审计 + 默认语言改英文
+
+**平台兼容性审计**（代码全部跨平台，仅打包层有注意事项）：
+
+- **路径**：存储键统一 `normalize_storage_path`（dunce + 正斜杠 + 小写）✓；应用数据/模型目录全部走 tauri `path()` 解析器（Windows `%APPDATA%`/`%LOCALAPPDATA%`、macOS `~/Library/Application Support`）✓；`LOCALAPPDATA` 仅出现在测试辅助函数（`#[ignore]` 且可 `TIOL_MODEL_DIR` 覆盖）✓。
+- **代码**：`reveal_in_folder` 三平台分支（explorer /select、open -R、xdg-open）✓；GPU 提供链按平台 cfg（CUDA+DirectML / CoreML / 空）✓；`mlx` 模式非 Apple 平台回退 CPU ✓；`windows_subsystem` cfg 门控 ✓；sqlite bundled（源码编译）✓；reqwest rustls ✓。
+- **打包注意事项（文档级）**：① macOS 需要 `icon.icns`——当前只有小尺寸 icon.png/icon.ico，macOS 打包前须 `npx tauri icon <1024px png>` 生成全套；② macOS/Linux 需要各自平台的 onnxruntime 动态库（仓库仅内置 win-x64 onnxruntime.dll）；③ Windows 安装包需要 NSIS/WiX（本机未装，联网下载被墙，可用 `cargo build --release` + 手动拷贝 DLL 组装便携版）；④ `src-tauri/.cargo/config.toml`（本地代理）已被 .gitignore 排除，不会污染 macOS 构建。
+
+**默认语言改英文**：`i18n.js DEFAULT_LANG = "en-US"`（SUPPORTED 顺序同步调整）；index.html 两处内联状态栏占位文本改英文（启动即被 i18n 覆盖，仅防闪烁）；已有用户持久化的 `language` 设置不受影响。
+
 
 ## C-10 · 2025-07 — 标记管理完善：删除连带清理 / 清除标记 / 进度浮窗 / 卡片刷新
 

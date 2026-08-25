@@ -3,8 +3,8 @@
 // Language preference is persisted in SQLite via set_setting("language", ...).
 const { invoke } = window.__TAURI__.core;
 
-export const SUPPORTED = ["zh-CN", "en-US"];
-export const DEFAULT_LANG = "zh-CN";
+export const SUPPORTED = ["en-US", "zh-CN"];
+export const DEFAULT_LANG = "en-US";
 
 let current = DEFAULT_LANG;
 let messages = {};
