@@ -47,6 +47,11 @@ jobs:
       - name: Generate icons (icon.ico / icon.png)
         run: npx --yes @tauri-apps/cli icon app-icon.png --output src-tauri/icons
 
+      - name: Install tauri CLI (npm)
+        # tauri-action invokes `npm run tauri build` — the binary comes from
+        # node_modules, which CI must install first (C-11.6).
+        run: npm install
+
       - name: Build + bundle (tauri-action)
         uses: tauri-apps/tauri-action@v0
         with:
@@ -98,6 +103,11 @@ jobs:
 
       - name: Generate icons (icon.icns / icon.ico / icon.png)
         run: npx --yes @tauri-apps/cli icon app-icon.png --output src-tauri/icons
+
+      - name: Install tauri CLI (npm)
+        # tauri-action invokes `npm run tauri build` — the binary comes from
+        # node_modules, which CI must install first (C-11.6).
+        run: npm install
 
       - name: Download onnxruntime universal2 (CoreML EP)
         run: |

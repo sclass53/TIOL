@@ -65,6 +65,10 @@
 
 **便携包内容（功能完整）**：Windows zip = tiol.exe + onnxruntime.dll + README；macOS zip = TIOL.app（dylib 已内嵌 Contents/MacOS 并 ad-hoc 签名）。安装包（msi/nsis）仍不内嵌 ORT（已知缺口，见 C-11）。
 
+## C-11.6 · 2025-07 — CI 修复：tauri-action 需要 npm install
+
+**CI 首跑失败**：`tauri-action` 通过前端包管理器调用 `npm run tauri build`，而 CI 从未执行 `npm install` → `'tauri' is not recognized`（Win）/ `tauri: command not found`（macOS）。修复：两个 job 在 tauri-action 前增加 `npm install` 步骤（`@tauri-apps/cli ^2.11.4` 在 devDependencies，仅用于 CLI 二进制；前端本身无依赖）。
+
 ## C-10.5 · 2025-07 — 审查修复：unknown 双标签 / 平台与 i18n 审计 / 清理与 .gitignore
 
 **需求**：① 有时照片同时获得正常标签和 unknown ② 检查 macOS/Windows 兼容性与中英文支持 ③ 代码逻辑复查 ④ 清理开发期无用缓存、写 .gitignore、更新 CHANGES.md。
