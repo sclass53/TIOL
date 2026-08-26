@@ -4,9 +4,13 @@
 
 # TIOL — AI Local Photo Manager
 
+Your privacy-first, local-first photo manager. Automatically tags photos. Built-in fast, intelligent searching. 
+
+![示例图片](examples/example.png)
+
 Supports **MacOS**, **Windows**, and **Linux**. 
 
-Privacy-first, local-first photo management. All photos stay on your own hard drive. AI inference runs completely offline. No cloud services required.
+All photos stay on your own hard drive. AI inference runs completely offline. No cloud services required.
 
 ## Features
 
