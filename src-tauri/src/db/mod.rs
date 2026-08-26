@@ -30,15 +30,22 @@ pub struct FileRecord {
     /// Tag names for this file (manual + auto), in insertion order.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Color labels (C-14) — one of red/orange/yellow/green/blue/purple,
+    /// stored separately from text tags; a file can carry several.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub colors: Vec<String>,
 }
 
 /// Shared SELECT column list for `files` (no alias) — column 9 is the
-/// comma-joined tag names (NULL when none).
+/// comma-joined tag names (NULL when none), column 10 the comma-joined
+/// color labels (NULL when none).
 const FILE_COLS: &str = "id, folder_id, COALESCE(display_path, path), filename, size, mtime, created_at, description, ai_processed, \
-    (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = files.id)";
+    (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = files.id), \
+    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = files.id)";
 /// Same, for queries aliasing the table as `f`.
 const FILE_COLS_F: &str = "f.id, f.folder_id, COALESCE(f.display_path, f.path), f.filename, f.size, f.mtime, f.created_at, f.description, f.ai_processed, \
-    (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = f.id)";
+    (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = f.id), \
+    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = f.id)";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTag {
@@ -128,6 +135,13 @@ impl Db {
                 ref_count INTEGER DEFAULT 0,
                 enabled INTEGER DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS color_tags (
+                file_id INTEGER NOT NULL,
+                color TEXT NOT NULL,
+                PRIMARY KEY(file_id, color),
+                FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_color_tags_color ON color_tags(color);
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -495,6 +509,51 @@ impl Db {
         )
         .map_err(|e| e.to_string())?;
         Ok(written)
+    }
+
+    /// Color labels (C-14): apply/remove one color for a set of files with
+    /// phone-gallery semantics — if EVERY selected file already carries the
+    /// color it is removed from all of them; otherwise it is added to the
+    /// files that lack it (idempotent). Returns whether all files carry the
+    /// color after the operation.
+    pub fn toggle_color_tag(&self, ids: &[i64], color: &str) -> Result<bool, String> {
+        if ids.is_empty() {
+            return Ok(false);
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let ph = vec!["?"; ids.len()].join(",");
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(ids.len() + 1);
+        params.push(&color);
+        for id in ids {
+            params.push(id);
+        }
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT COUNT(*) FROM color_tags WHERE color = ?1 AND file_id IN ({ph})"
+            ))
+            .map_err(|e| e.to_string())?;
+        let have: i64 = stmt
+            .query_row(params.as_slice(), |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if have as usize == ids.len() {
+            // Every selected file carries it → remove from all.
+            conn.execute(
+                &format!("DELETE FROM color_tags WHERE color = ?1 AND file_id IN ({ph})"),
+                params.as_slice(),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            // Add to every file (INSERT OR IGNORE — idempotent).
+            for &fid in ids {
+                conn.execute(
+                    "INSERT OR IGNORE INTO color_tags(file_id, color) VALUES(?1, ?2)",
+                    params![fid, color],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(true)
+        }
     }
 
     /// Every tag name the user could add: tags ever applied (manual or AI)
@@ -940,7 +999,11 @@ impl Db {
 
 fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
     let tags_raw: Option<String> = row.get(9)?;
+    let colors_raw: Option<String> = row.get(10)?;
     let tags: Vec<String> = tags_raw
+        .map(|s| s.split(',').map(|t| t.to_string()).collect())
+        .unwrap_or_default();
+    let colors: Vec<String> = colors_raw
         .map(|s| s.split(',').map(|t| t.to_string()).collect())
         .unwrap_or_default();
     Ok(FileRecord {
@@ -955,6 +1018,7 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
         ai_processed: row.get(8)?,
         score: None,
         tags,
+        colors,
     })
 }
 // Unit tests: path normalization, DB migration, scanner, tag search (ADD.md §11).
@@ -1178,6 +1242,37 @@ mod tests {
         assert!(names.contains(&"test".to_string()));
         assert!(!names.iter().any(|n| n == "unknown"));
         assert_eq!(names[0], "cat"); // cat is on both files (2 uses), dog on 1, test on 0
+    }
+
+    #[test]
+    fn color_tags_toggle() {
+        let (_dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        std::fs::write(folder.path().join("b.jpg"), b"y").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let files = db.get_photos(Some(fid)).unwrap();
+        let ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+
+        // Nothing has red → toggle adds it to all.
+        assert!(db.toggle_color_tag(&ids, "red").unwrap());
+        // All have red now → toggle removes it from all.
+        assert!(!db.toggle_color_tag(&ids, "red").unwrap());
+        // A file can carry several colors at once.
+        db.toggle_color_tag(&[ids[0]], "red").unwrap();
+        db.toggle_color_tag(&[ids[0]], "blue").unwrap();
+        let rec = db.get_file_by_id(ids[0]).unwrap().unwrap();
+        assert!(rec.colors.contains(&"red".to_string()));
+        assert!(rec.colors.contains(&"blue".to_string()));
+        assert!(rec.tags.is_empty());
+        // Mixed: only file0 has green → toggle adds to file1 too (all=true).
+        assert!(db.toggle_color_tag(&ids, "green").unwrap());
+        let rec1 = db.get_file_by_id(ids[1]).unwrap().unwrap();
+        assert!(rec1.colors.contains(&"green".to_string()));
+        // Deleting the files cascades their color rows (foreign_keys=ON).
+        db.delete_missing(fid, &std::collections::HashSet::new()).unwrap();
+        assert!(db.get_photos(Some(fid)).unwrap().is_empty());
     }
 
     #[test]

@@ -156,6 +156,101 @@ html, body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
+/* Color filter button at the LEFT end of the search bar (C-14) */
+.searchbar__filter {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+.searchbar__filter--active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Color filter dropdown panel (multi-select, union) — positioned under the
+   filter button by JS (left/top are set on open). */
+.color-filter {
+  position: fixed;
+  z-index: 850;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.color-filter[hidden] {
+  display: none;
+}
+.color-filter__title {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.color-filter__dots {
+  display: flex;
+  gap: 10px;
+}
+.color-filter__clear {
+  align-self: flex-start;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Color dots: selection bar (22px), filter panel (18px), cards (9px) */
+.color-dot {
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.color-dot--sel {
+  width: 22px;
+  height: 22px;
+}
+.color-dot--filter {
+  width: 18px;
+  height: 18px;
+}
+.color-dot--filter.color-dot--on {
+  box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--accent);
+}
+.color-dot--pulse {
+  animation: dotPulse 0.35s ease;
+}
+@keyframes dotPulse {
+  50% {
+    transform: scale(1.4);
+  }
+}
+
+.selection-bar__dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 4px;
+  border-left: 1px solid var(--separator);
+  border-right: 1px solid var(--separator);
+}
+
+/* Color dots on photo cards (right of the filename, Apple-Photos style) */
+.card__colors {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.card__color {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 /* Photo grid */
 .grid {
   flex: 1;

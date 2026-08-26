@@ -24,6 +24,7 @@
             <option value="semantic" data-i18n="search.mode.semantic">语义搜索</option>
             <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
           </select>
+          <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
           <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
@@ -31,6 +32,7 @@
         <div class="selection-bar" id="selection-bar" hidden>
           <span class="selection-bar__count" id="selection-count"></span>
           <span class="selection-bar__hint" id="selection-hint" hidden></span>
+          <span class="selection-bar__dots" id="selection-color-dots"></span>
           <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
           <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
         </div>
@@ -155,6 +157,13 @@
         <button class="btn btn--ghost" id="tagpick-cancel" data-i18n="dialog.cancel">取消</button>
       </div>
     </div>
+  </div>
+
+  <!-- Color filter dropdown (multi-select, union) -->
+  <div class="color-filter" id="color-filter" hidden>
+    <div class="color-filter__title" data-i18n="photos.filterColor">颜色筛选</div>
+    <div class="color-filter__dots" id="color-filter-dots"></div>
+    <button class="btn btn--ghost color-filter__clear" id="btn-color-filter-clear" data-i18n="photos.filterClear">清除</button>
   </div>
 
   <!-- Generic confirm dialog (clears tags, etc.) -->

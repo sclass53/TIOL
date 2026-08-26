@@ -550,7 +550,7 @@ function renderPhotos(photos) {
   // Queued entries reference cards from the previous render — drop them.
   thumbQueue.length = 0;
   if (!photos.length) {
-    els.photoGrid.innerHTML = `<div class="empty">${t("photos.empty")}</div>`;
+    els.photoGrid.innerHTML = `<div class="empty">${t(activeColorFilters.size ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
     return;
   }
@@ -818,6 +818,117 @@ els.tagpickCancel.addEventListener("click", () => {
 });
 els.tagpickOverlay.addEventListener("click", (e) => {
   if (e.target === els.tagpickOverlay) els.tagpickOverlay.hidden = true;
+});
+
+// ---------------------------------------------------------------------------
+// Color labels (C-14): applied from the selection-bar dots, shown as dots on
+// the cards (right of the filename), filterable from the search bar (union).
+// ---------------------------------------------------------------------------
+const COLOR_ORDER = ["red", "orange", "yellow", "green", "blue", "purple"];
+const COLOR_HEX = {
+  red: "#ff3b30",
+  orange: "#ff9500",
+  yellow: "#ffcc00",
+  green: "#34c759",
+  blue: "#0a84ff",
+  purple: "#af52de",
+};
+
+// The unfiltered result of the current query — color filters re-apply to it.
+let allPhotos = [];
+
+function applyColorFilter(photos) {
+  if (!activeColorFilters.size) return photos;
+  return photos.filter((p) => {
+    const cs = p.colors || [];
+    return [...activeColorFilters].some((c) => cs.includes(c));
+  });
+}
+
+// Selection-bar dots: one per color; clicking applies/toggles it on ALL
+// selected photos (phone-gallery semantics, handled by toggle_color_tag).
+const selectionColorDots = document.getElementById("selection-color-dots");
+for (const c of COLOR_ORDER) {
+  const dot = document.createElement("button");
+  dot.className = "color-dot color-dot--sel";
+  dot.style.background = COLOR_HEX[c];
+  dot.title = t(`colors.${c}`);
+  dot.addEventListener("click", async () => {
+    if (!selectedIds.size) return;
+    const ids = [...selectedIds];
+    try {
+      const all = await invoke("toggle_color_tag", { fileIds: ids, color: c });
+      // Update the visible cards in place (keeps scroll position).
+      for (const p of currentPhotos) {
+        if (!selectedIds.has(p.id)) continue;
+        const cs = p.colors || [];
+        if (all && !cs.includes(c)) p.colors = [...cs, c];
+        else if (!all && cs.includes(c)) p.colors = cs.filter((x) => x !== c);
+        if (p._card) renderCardMeta(p._card, p);
+      }
+      dot.classList.add("color-dot--pulse");
+      setTimeout(() => dot.classList.remove("color-dot--pulse"), 350);
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+  selectionColorDots.appendChild(dot);
+}
+
+// Search-bar color filter (multi-select, union: a photo matches if it has
+// ANY of the selected colors).
+const activeColorFilters = new Set();
+const btnColorFilter = document.getElementById("btn-color-filter");
+const colorFilterPanel = document.getElementById("color-filter");
+const colorFilterDots = document.getElementById("color-filter-dots");
+
+function renderFilterDots() {
+  colorFilterDots.textContent = "";
+  for (const c of COLOR_ORDER) {
+    const dot = document.createElement("button");
+    dot.className =
+      "color-dot color-dot--filter" +
+      (activeColorFilters.has(c) ? " color-dot--on" : "");
+    dot.style.background = COLOR_HEX[c];
+    dot.title = t(`colors.${c}`);
+    dot.addEventListener("click", () => {
+      if (activeColorFilters.has(c)) activeColorFilters.delete(c);
+      else activeColorFilters.add(c);
+      renderFilterDots();
+      renderPhotos(applyColorFilter(allPhotos));
+    });
+    colorFilterDots.appendChild(dot);
+  }
+  btnColorFilter.classList.toggle(
+    "searchbar__filter--active",
+    activeColorFilters.size > 0
+  );
+}
+renderFilterDots();
+
+btnColorFilter.addEventListener("click", (e) => {
+  e.stopPropagation();
+  colorFilterPanel.hidden = !colorFilterPanel.hidden;
+  if (!colorFilterPanel.hidden) {
+    // Anchor the panel under the filter button (it sits between the search
+    // boxes, not at the left edge anymore).
+    const r = btnColorFilter.getBoundingClientRect();
+    colorFilterPanel.style.left = `${Math.max(8, r.left)}px`;
+    colorFilterPanel.style.top = `${r.bottom + 6}px`;
+  }
+});
+document.getElementById("btn-color-filter-clear").addEventListener("click", () => {
+  activeColorFilters.clear();
+  renderFilterDots();
+  renderPhotos(applyColorFilter(allPhotos));
+});
+document.addEventListener("click", (e) => {
+  if (
+    !colorFilterPanel.hidden &&
+    !e.target.closest("#color-filter, #btn-color-filter")
+  ) {
+    colorFilterPanel.hidden = true;
+  }
 });
 
 // Keep filling until the viewport is covered (only while photos view visible).
@@ -1092,11 +1203,25 @@ async function closeEditDialog(save) {
   }
 }
 
-/// Re-render the meta row of one card (name + tag list) after a tag edit.
+/// Re-render the meta row of one card (name + color dots + tag list) after a
+/// tag/color edit.
+function renderCardColors(el, colors) {
+  el.textContent = "";
+  for (const c of colors || []) {
+    const dot = document.createElement("span");
+    dot.className = "card__color";
+    dot.style.background = COLOR_HEX[c] || "#888";
+    dot.title = t(`colors.${c}`);
+    el.appendChild(dot);
+  }
+}
+
 function renderCardMeta(card, p) {
   const meta = card.querySelector(".card__meta");
   if (!meta) return;
   meta.querySelectorAll(".card__desc").forEach((el) => el.remove());
+  const colorsEl = card.querySelector(".card__colors");
+  if (colorsEl) renderCardColors(colorsEl, p.colors);
   if (p.tags && p.tags.length) {
     const tagsText = p.tags.join(", ");
     const descEl = document.createElement("div");
@@ -1165,6 +1290,10 @@ function buildCard(p) {
   nameEl.className = "card__meta-name";
   nameEl.textContent = p.filename;
   nameEl.title = p.path;
+  // Color-label dots (C-14), right of the filename like Apple Photos.
+  const colorsEl = document.createElement("span");
+  colorsEl.className = "card__colors";
+  renderCardColors(colorsEl, p.colors);
   const editBtn = document.createElement("button");
   editBtn.className = "card__edit";
   editBtn.textContent = "✎";
@@ -1174,6 +1303,7 @@ function buildCard(p) {
     openEditDialog(p);
   });
   metaRow.appendChild(nameEl);
+  metaRow.appendChild(colorsEl);
   metaRow.appendChild(editBtn);
   meta.appendChild(metaRow);
   if (p.tags && p.tags.length) {
@@ -1209,7 +1339,8 @@ function buildCard(p) {
 async function loadPhotos(folderId = null) {
   try {
     const photos = await invoke("get_photos", { folderId });
-    renderPhotos(photos);
+    allPhotos = photos;
+    renderPhotos(applyColorFilter(photos));
   } catch (e) {
     console.error(e);
   }
@@ -1433,7 +1564,8 @@ async function runSearch() {
   if (q2) {
     try {
       const res = await invoke("search", { query: q2, mode });
-      renderPhotos(res);
+      allPhotos = res;
+      renderPhotos(applyColorFilter(res));
     } catch (e) {
       console.error(e);
       renderPhotos([]);
@@ -1454,7 +1586,8 @@ async function runSearch() {
   }
   try {
     const nameRes = await invoke("search_files", { query: qName });
-    renderPhotos(nameRes || []);
+    allPhotos = nameRes || [];
+    renderPhotos(applyColorFilter(allPhotos));
   } catch (e) {
     console.error(e);
   }

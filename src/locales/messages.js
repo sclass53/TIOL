@@ -35,10 +35,22 @@ export const MESSAGES = {
       "selectedCount": "已选 {count} 张",
       "addTagSelected": "添加标签",
       "tagsAdded": "已为 {count} 张照片添加「{tag}」",
+      "filterColor": "颜色筛选",
+      "filterBtn": "筛选",
+      "filterClear": "清除",
+      "filterEmpty": "没有符合颜色筛选的照片",
       "status": {
         "count": "{count} 张照片",
         "partial": "{shown} / {total} 张照片"
       }
+    },
+    "colors": {
+      "red": "红色",
+      "orange": "橙色",
+      "yellow": "黄色",
+      "green": "绿色",
+      "blue": "蓝色",
+      "purple": "紫色"
     },
     "folders": {
       "empty": "尚未添加目录",
@@ -164,10 +176,22 @@ export const MESSAGES = {
       "selectedCount": "{count} selected",
       "addTagSelected": "Add tag",
       "tagsAdded": "“{tag}” added to {count} photos",
+      "filterColor": "Color filter",
+      "filterBtn": "Filter",
+      "filterClear": "Clear",
+      "filterEmpty": "No photos match the color filter",
       "status": {
         "count": "{count} photos",
         "partial": "{shown} / {total} photos"
       }
+    },
+    "colors": {
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "blue": "Blue",
+      "purple": "Purple"
     },
     "folders": {
       "empty": "No folders added yet",

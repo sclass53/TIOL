@@ -555,6 +555,26 @@ fn add_tags_to_files(
     Ok(file_ids.len())
 }
 
+/// Color labels (C-14): apply/remove ONE color to the selection (phone
+/// gallery semantics — toggle). Colors are stored separately from text
+/// tags. Returns whether all selected files carry the color afterwards.
+#[tauri::command]
+fn toggle_color_tag(
+    state: tauri::State<AppState>,
+    file_ids: Vec<i64>,
+    color: String,
+) -> Result<bool, String> {
+    const COLORS: [&str; 6] = ["red", "orange", "yellow", "green", "blue", "purple"];
+    if !COLORS.contains(&color.as_str()) {
+        return Err(format!("invalid color: {color}"));
+    }
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    log::info!("toggle_color_tag: {} files, color={}", file_ids.len(), color);
+    state.db.toggle_color_tag(&file_ids, &color)
+}
+
 /// Manual "AI Tagging" (C-12): the ONLY way tagging starts. Enqueues a
 /// full tag-list check (AITask::tag_all) for every file missing at least
 /// one currently-defined custom tag — this covers newly added tags AND
@@ -1130,6 +1150,7 @@ fn main() {
             get_custom_tags,
             get_all_tags,
             add_tags_to_files,
+            toggle_color_tag,
             run_ai_tagging,
             clear_all_tags,
             get_ai_status,

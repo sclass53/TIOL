@@ -32,10 +32,22 @@
     "selectedCount": "{count} selected",
     "addTagSelected": "Add tag",
     "tagsAdded": "“{tag}” added to {count} photos",
+    "filterColor": "Color filter",
+    "filterBtn": "Filter",
+    "filterClear": "Clear",
+    "filterEmpty": "No photos match the color filter",
     "status": {
       "count": "{count} photos",
       "partial": "{shown} / {total} photos"
     }
+  },
+  "colors": {
+    "red": "Red",
+    "orange": "Orange",
+    "yellow": "Yellow",
+    "green": "Green",
+    "blue": "Blue",
+    "purple": "Purple"
   },
   "folders": {
     "empty": "No folders added yet",

@@ -32,10 +32,22 @@
     "selectedCount": "已选 {count} 张",
     "addTagSelected": "添加标签",
     "tagsAdded": "已为 {count} 张照片添加「{tag}」",
+    "filterColor": "颜色筛选",
+    "filterBtn": "筛选",
+    "filterClear": "清除",
+    "filterEmpty": "没有符合颜色筛选的照片",
     "status": {
       "count": "{count} 张照片",
       "partial": "{shown} / {total} 张照片"
     }
+  },
+  "colors": {
+    "red": "红色",
+    "orange": "橙色",
+    "yellow": "黄色",
+    "green": "绿色",
+    "blue": "蓝色",
+    "purple": "紫色"
   },
   "folders": {
     "empty": "尚未添加目录",
