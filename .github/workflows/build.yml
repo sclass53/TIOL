@@ -182,3 +182,75 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app
             TIOL-macos-arm64.zip
           if-no-files-found: warn
+
+  # ============================================================
+  # 新增 Job：将构建产物推送到 TIOL-site 仓库并更新版本号
+  # ============================================================
+  push-to-site-repo:
+    name: Push artifacts to TIOL-site releases/
+    runs-on: ubuntu-latest
+    # 只在 tag 推送时执行（与 release 逻辑一致）
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-macos]   # 等待两个构建 job 完成
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tiol-windows
+          path: ./artifacts/windows
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tiol-macos
+          path: ./artifacts/macos
+
+      - name: Checkout target repository (TIOL-site)
+        uses: actions/checkout@v4
+        with:
+          repository: MNFilm-Industry/TIOL-site
+          token: ${{ secrets.REPO_PUSH_TOKEN }}   # 需要提前配置该 Secret
+          path: ./site-repo
+
+      - name: Update version.json (for website)
+        run: |
+          cd ./site-repo
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "{\"version\": \"$VERSION\", \"tag\": \"$GITHUB_REF_NAME\", \"updated\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > version.json
+          cat version.json
+
+      - name: Organize and copy artifacts into releases/ directory
+        run: |
+          # 创建版本子目录和 latest 目录
+          VERSION=${GITHUB_REF_NAME#v}
+          TARGET_DIR="./site-repo/releases/v${VERSION}"
+          mkdir -p "$TARGET_DIR"
+          mkdir -p "./site-repo/releases/latest"
+
+          # 复制 Windows 产物（.msi, .exe, .zip）
+          cp -v ./artifacts/windows/*.msi "$TARGET_DIR/" 2>/dev/null || true
+          cp -v ./artifacts/windows/*.exe "$TARGET_DIR/" 2>/dev/null || true
+          cp -v ./artifacts/windows/*.zip "$TARGET_DIR/" 2>/dev/null || true
+
+          # 复制 macOS 产物（.app 目录和 .zip）
+          cp -rv ./artifacts/macos/*.app "$TARGET_DIR/" 2>/dev/null || true
+          cp -v ./artifacts/macos/*.zip "$TARGET_DIR/" 2>/dev/null || true
+
+          # 同步到 latest 目录（便于官网固定链接）
+          cp -v "$TARGET_DIR"/* ./site-repo/releases/latest/ 2>/dev/null || true
+
+          # 打印目录结构（调试用）
+          ls -lR ./site-repo/releases/
+
+      - name: Commit and push to TIOL-site
+        run: |
+          cd ./site-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add releases/ version.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update releases and version to ${GITHUB_REF_NAME}"
+            git push
+          fi
