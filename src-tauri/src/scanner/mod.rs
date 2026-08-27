@@ -76,6 +76,10 @@ pub fn scan_folder(db: &Db, folder_id: i64, folder_path: &str) -> Result<(usize,
                 .unwrap_or("unknown")
                 .to_string();
             let id = db.upsert_file(folder_id, &key, &display, &filename, size, mtime)?;
+            // C-15: extract EXIF lens/focal for new/changed files right here
+            // (a few ms per file; the startup backfill covers older rows).
+            let (lens, focal) = crate::exif::read_lens_focal(p);
+            let _ = db.update_exif(id, lens.as_deref(), focal);
             pending.push(id);
             changed += 1;
         }

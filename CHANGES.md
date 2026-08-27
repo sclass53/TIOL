@@ -3,6 +3,38 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-15 · 2025-07 — EXIF 镜头/焦距：预览显示 + 镜头/焦段筛选
+
+**需求**：① 读取照片 EXIF 镜头/焦距，不在卡片上直接显示，预览打开后在右侧窗口显示；② 筛选按钮面板增加"镜头"选项（勾选特定镜头）与"焦段"选项（min–max 范围），与颜色筛选互为**交集**；③ 筛选条件要求了某条数据而照片 EXIF 没有该条时，该照片不进入结果。
+
+**实现**：
+
+1. **EXIF 提取**（新模块 `exif.rs`，kamadak-exif 0.5）：读 `LensModel`(0xA434) 与 `FocalLength`(0x920A, mm)，失败/无 EXIF 返回 None（永不报错）；`display_value()` 的 ASCII 引号已剥离。提取时机：scanner 对**新增/变更文件**即时提取；启动后台**回填** `exif_checked=0` 的存量行（分页 500，读完即标记，无 EXIF 也只跑一次）。files 表新增 `lens TEXT / focal_length REAL / exif_checked INTEGER`（migrate 自动加列，upsert 内容变化时重置 exif_checked）。
+2. **数据链路**：`FileRecord` 新增 `lens/focal_length`（serde skip None）；`FILE_COLS/FILE_COLS_F` 增加两列——所有照片查询/搜索自动携带。
+3. **预览显示**：预览面板 meta 区改为多行——文件名·大小 / `镜头：xxx` / `焦距：50 mm`（有则显示，无则不显示；焦距整数不带小数）。
+4. **筛选面板扩展**（与颜色筛选同一面板，全部**交集**）：
+   - **镜头**：勾选式列表（`get_lens_list` 去重排序，会话内缓存），多选 = 并集；激活时照片 lens 必须命中其一，**无镜头数据的照片被排除**（C-15 规则）。
+   - **焦段**：min/max 数字输入（mm，可只填一边，留空 = 不限）；激活时照片 `focal_length` 必须在范围内，**无焦距数据被排除**。
+   - 颜色 ∩ 镜头 ∩ 焦段 三层叠加；「清除」一键清空全部；筛选按钮高亮反映任一激活。
+5. **构建环境变更**：新增 crate 依赖在 E: 盘（**exFAT**）解包设置文件时间戳失败（cargo/bsdtar 的 SetFileTime 兼容问题，`os error 87`）→ `CARGO_HOME` 迁至 **`C:\Users\david\.cargo-tiol`**（1.2GB，robocopy 迁移，registry 源码保留）。今后所有 cargo 命令使用新 CARGO_HOME；E 盘旧目录已清空。
+6. **单测**：`exif.rs` 手工构造含 LensModel/FocalLength 的 EXIF JPEG 验证解析（`reads_lens_and_focal_from_exif`）+ 无 EXIF 返回 None；db 层 `exif_columns_roundtrip`（回填队列/读写/镜头列表/变更重置），共 11 项全过。
+
+**行为对照**：预览 → 右侧显示镜头与焦距 ✓；筛选面板勾镜头 A+B → 只显示 A/B 镜头照片（无镜头数据排除）✓；焦段 24–70 → 只显示焦距在区间且**有焦距数据**的照片 ✓；颜色+镜头+焦段同时筛选 → 交集 ✓。
+
+## C-15.1 · 2025-07 — 多选删除标签 + 筛选/面板修复 + 窗口 1270
+
+- **多选「删除标签」（红色按钮）**：selection-bar 新增 `.btn--danger` 红色「删除标签」；确认对话框后调用新命令 `clear_tags_from_files`（db `clear_all_tags_on_files`：删除这些文件的**全部文字标签（手动+AI）+ 颜色标签**），卡片原地刷新；完成提示文案从长句缩短为「已清除 N 张照片 / N photos cleared」（避免撑宽底栏按钮换行）。
+- **镜头筛选修复**：匹配改为 `(p.lens || "").trim()` 比较（消除空白差异）；加诊断日志 `lens-filter`（筛选空结果且有镜头数据时输出实际字段值，供排查）；`"----"` 占位镜头（Sony 无镜头信息）在读取时即过滤 + `get_lens_list` 排除 + 预览不显示。
+- **筛选面板布局修复**：面板固定宽度 240px；镜头列表改**块级 + 固定行高 28px + line-height 居中**（条目物理上不可能重叠），容器 160px + `min-height:0` + 内部滚动。
+- **窗口宽度**：tauri.conf.json `1290 → 1270`。
+- 单测 12 项全过。
+
+## C-15.2 · 2025-07 — 设为壁纸（右键菜单）
+
+- 右键卡片菜单新增「设为壁纸」：`set_wallpaper` 命令——**Windows** 用 `SystemParametersInfoW(SPI_SETDESKWALLPAPER)` 原始 FFI（零新依赖）；**macOS** 走 `osascript`（System Events 设置所有桌面，可能弹辅助功能授权）；**Linux** 用 `gsettings`（GNOME）。
+- 成功显示底部 toast「壁纸已设置」（`.toast` 组件，2.2s 自动消失）；失败 alert 原因。
+- i18n：`menu.wallpaper/wallpaperSet`（中英同步），`messages.js` 重新生成。
+
 ## C-14 · 2025-07 — 颜色标签（独立存储）+ 颜色筛选
 
 **需求**（仿苹果相册）：① 多选模式底部 pill 中间放若干颜色圆点，点击即给选中照片应用颜色标签（一张图可多个颜色）；卡片文件名右侧显示对应颜色点；② 搜索框左侧加颜色筛选（多选、并集）。

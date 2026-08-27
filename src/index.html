@@ -34,6 +34,7 @@
           <span class="selection-bar__hint" id="selection-hint" hidden></span>
           <span class="selection-bar__dots" id="selection-color-dots"></span>
           <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+          <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
           <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
         </div>
         <div class="statusbar" id="photo-status">0 photos</div>
@@ -159,10 +160,18 @@
     </div>
   </div>
 
-  <!-- Color filter dropdown (multi-select, union) -->
+  <!-- Color/lens/focal filter dropdown (multi-select, all intersect) -->
   <div class="color-filter" id="color-filter" hidden>
     <div class="color-filter__title" data-i18n="photos.filterColor">颜色筛选</div>
     <div class="color-filter__dots" id="color-filter-dots"></div>
+    <div class="color-filter__title" data-i18n="photos.filterLens">镜头</div>
+    <div class="color-filter__lens" id="color-filter-lens"></div>
+    <div class="color-filter__title" data-i18n="photos.filterFocal">焦段</div>
+    <div class="color-filter__focal">
+      <input class="color-filter__focal-input" id="filter-focal-min" type="number" min="0" step="1" placeholder="min mm" data-i18n-placeholder="photos.filterFocalMin" />
+      <span class="color-filter__focal-sep">–</span>
+      <input class="color-filter__focal-input" id="filter-focal-max" type="number" min="0" step="1" placeholder="max mm" data-i18n-placeholder="photos.filterFocalMax" />
+    </div>
     <button class="btn btn--ghost color-filter__clear" id="btn-color-filter-clear" data-i18n="photos.filterClear">清除</button>
   </div>
 

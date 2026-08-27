@@ -6,6 +6,7 @@
 mod ai;
 mod db;
 mod error;
+mod exif;
 mod logbuf;
 mod scanner;
 mod search;
@@ -535,6 +536,12 @@ fn get_all_tags(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
     state.db.get_all_tag_names()
 }
 
+/// Distinct lens names across the library (C-15 filter panel), sorted.
+#[tauri::command]
+fn get_lens_list(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
+    state.db.get_lens_list()
+}
+
 /// Multi-select "add tag" (C-13): append the given tags as MANUAL tags
 /// (source=0) to every selected file. Existing tags are kept.
 #[tauri::command]
@@ -553,6 +560,20 @@ fn add_tags_to_files(
     log::info!("add_tags_to_files: {} files, tags {:?}", file_ids.len(), tags);
     state.db.add_manual_tags_batch(&file_ids, &tags)?;
     Ok(file_ids.len())
+}
+
+/// Multi-select "delete tags" (C-15.1): remove EVERY tag from the selected
+/// files — text tags (manual + AI) AND color labels.
+#[tauri::command]
+fn clear_tags_from_files(
+    state: tauri::State<AppState>,
+    file_ids: Vec<i64>,
+) -> Result<usize, String> {
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    log::info!("clear_tags_from_files: {} files", file_ids.len());
+    state.db.clear_all_tags_on_files(&file_ids)
 }
 
 /// Color labels (C-14): apply/remove ONE color to the selection (phone
@@ -624,6 +645,79 @@ async fn run_ai_tagging(state: tauri::State<'_, AppState>) -> Result<usize, Stri
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Set the OS desktop wallpaper to the given image (right-click menu, C-15.2).
+/// Windows: SystemParametersInfoW via raw FFI (no extra crates); macOS:
+/// osascript/System Events (may prompt for accessibility permission);
+/// Linux: gsettings (GNOME).
+#[tauri::command]
+fn set_wallpaper(path: String) -> Result<(), String> {
+    log::info!("set_wallpaper {}", path);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide: Vec<u16> = std::ffi::OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        const SPI_SETDESKWALLPAPER: u32 = 0x0014;
+        const SPIF_UPDATEINIFILE: u32 = 0x01;
+        const SPIF_SENDCHANGE: u32 = 0x02;
+        unsafe extern "system" {
+            fn SystemParametersInfoW(
+                uiAction: u32,
+                uiParam: u32,
+                pvParam: *mut std::ffi::c_void,
+                fWinIni: u32,
+            ) -> i32;
+        }
+        let ok = unsafe {
+            SystemParametersInfoW(
+                SPI_SETDESKWALLPAPER,
+                0,
+                wide.as_ptr() as *mut std::ffi::c_void,
+                SPIF_UPDATEINIFILE | SPIF_SENDCHANGE,
+            )
+        };
+        if ok == 0 {
+            return Err("SystemParametersInfoW failed (invalid image?)".to_string());
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let out = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "tell application \"System Events\" to set picture of every desktop to \"{escaped}\""
+                ),
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "osascript failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let uri = format!("file://{}", path);
+        let out = std::process::Command::new("gsettings")
+            .args(["set", "org.gnome.desktop.background", "picture-uri", &uri])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "gsettings failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1119,6 +1213,36 @@ fn main() {
                     // (run_ai_tagging), which re-checks every file missing
                     // any current tag (new tags + new files included).
                     spawn_thumb_prewarm(prewarm_dir, db_clone);
+                    // EXIF backfill (C-15): read lens/focal for rows scanned
+                    // before the feature existed. Files without EXIF are
+                    // marked checked too, so this runs once.
+                    {
+                        let bdb = db2.clone();
+                        std::thread::spawn(move || {
+                            let mut offset = 0i64;
+                            loop {
+                                let batch = match bdb.get_files_missing_exif(500, offset) {
+                                    Ok(b) => b,
+                                    Err(e) => {
+                                        log::warn!("exif backfill query failed: {e}");
+                                        return;
+                                    }
+                                };
+                                if batch.is_empty() {
+                                    break;
+                                }
+                                for (id, path) in &batch {
+                                    let (lens, focal) =
+                                        exif::read_lens_focal(std::path::Path::new(path));
+                                    if let Err(e) = bdb.update_exif(*id, lens.as_deref(), focal) {
+                                        log::warn!("exif backfill update failed for {path}: {e}");
+                                    }
+                                }
+                                offset += batch.len() as i64;
+                            }
+                            log::info!("exif backfill complete");
+                        });
+                    }
                 });
             }
             rebuild_watcher(&state, app.handle().clone());
@@ -1149,12 +1273,15 @@ fn main() {
             delete_custom_tag,
             get_custom_tags,
             get_all_tags,
+            get_lens_list,
             add_tags_to_files,
+            clear_tags_from_files,
             toggle_color_tag,
             run_ai_tagging,
             clear_all_tags,
             get_ai_status,
             set_ai_provider,
+            set_wallpaper,
             set_debug_mode,
             get_logs,
             report_js_event

@@ -32,10 +32,18 @@
     "selectedCount": "{count} selected",
     "addTagSelected": "Add tag",
     "tagsAdded": "“{tag}” added to {count} photos",
+    "deleteTags": "Delete tags",
+    "deleteTagsConfirm": "Remove ALL tags (text and colors) from the {count} selected photos?",
+    "tagsDeleted": "{count} photos cleared",
     "filterColor": "Color filter",
     "filterBtn": "Filter",
     "filterClear": "Clear",
-    "filterEmpty": "No photos match the color filter",
+    "filterLens": "Lens",
+    "filterLensEmpty": "No lens info in the library",
+    "filterFocal": "Focal length",
+    "filterFocalMin": "Min mm",
+    "filterFocalMax": "Max mm",
+    "filterEmpty": "No photos match the filters",
     "status": {
       "count": "{count} photos",
       "partial": "{shown} / {total} photos"
@@ -73,11 +81,15 @@
     }
   },
   "menu": {
-    "reveal": "Show in File Explorer"
+    "reveal": "Show in File Explorer",
+    "wallpaper": "Set as wallpaper",
+    "wallpaperSet": "Wallpaper set"
   },
   "preview": {
     "close": "Close preview",
-    "error": "Cannot preview this file"
+    "error": "Cannot preview this file",
+    "lens": "Lens: {lens}",
+    "focal": "Focal length: {focal} mm"
   },
   "dialog": {
     "confirmTitle": "Confirm action",

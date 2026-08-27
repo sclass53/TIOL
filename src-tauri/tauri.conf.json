@@ -47,7 +47,7 @@
         "height": 800,
         "resizable": true,
         "title": "TIOL - AI Local Photo Manager",
-        "width": 1290,
+        "width": 1270,
         "useHttpsScheme": true,
         "create": false
       }

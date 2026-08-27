@@ -69,6 +69,7 @@ const els = {
   selectionCount: document.getElementById("selection-count"),
   selectionHint: document.getElementById("selection-hint"),
   btnSelectionTag: document.getElementById("btn-selection-tag"),
+  btnSelectionClearTags: document.getElementById("btn-selection-clear-tags"),
   btnSelectionCancel: document.getElementById("btn-selection-cancel"),
   tagpickOverlay: document.getElementById("tagpick-overlay"),
   tagpickList: document.getElementById("tagpick-list"),
@@ -550,7 +551,7 @@ function renderPhotos(photos) {
   // Queued entries reference cards from the previous render — drop them.
   thumbQueue.length = 0;
   if (!photos.length) {
-    els.photoGrid.innerHTML = `<div class="empty">${t(activeColorFilters.size ? "photos.filterEmpty" : "photos.empty")}</div>`;
+    els.photoGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
     return;
   }
@@ -632,6 +633,7 @@ function updateSelectionBar() {
   const n = selectedIds.size;
   els.selectionCount.textContent = t("photos.selectedCount", { count: n });
   els.btnSelectionTag.disabled = n === 0;
+  els.btnSelectionClearTags.disabled = n === 0;
 }
 
 function toggleSelect(photo) {
@@ -656,6 +658,27 @@ function hideSelectionHint() {
 
 els.btnSelectMode.addEventListener("click", () => setSelectMode(!selectMode));
 els.btnSelectionCancel.addEventListener("click", () => setSelectMode(false));
+
+// "Delete tags" (red): strip ALL tags (text + colors) from the selection.
+els.btnSelectionClearTags.addEventListener("click", () => {
+  const n = selectedIds.size;
+  confirmDialog(t("photos.deleteTagsConfirm", { count: n }), async () => {
+    const ids = [...selectedIds];
+    try {
+      await invoke("clear_tags_from_files", { fileIds: ids });
+      showSelectionHint(t("photos.tagsDeleted", { count: ids.length }));
+      // Update the visible cards in place (keeps scroll position).
+      for (const p of currentPhotos) {
+        if (!selectedIds.has(p.id)) continue;
+        p.tags = [];
+        p.colors = [];
+        if (p._card) renderCardMeta(p._card, p);
+      }
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+});
 
 // Esc leaves select mode (after closing any open overlay first).
 document.addEventListener("keydown", (e) => {
@@ -834,15 +857,46 @@ const COLOR_HEX = {
   purple: "#af52de",
 };
 
-// The unfiltered result of the current query — color filters re-apply to it.
+// The unfiltered result of the current query — filters re-apply to it.
 let allPhotos = [];
 
-function applyColorFilter(photos) {
-  if (!activeColorFilters.size) return photos;
+function hasActiveFilters() {
+  return (
+    activeColorFilters.size > 0 ||
+    activeLensFilters.size > 0 ||
+    focalMin != null ||
+    focalMax != null
+  );
+}
+
+/// Combined filter (C-14/C-15): color labels ∩ lens ∩ focal range — all
+/// intersections. Per the C-15 rule, a photo WITHOUT the required EXIF data
+/// (lens or focal) fails that filter.
+function applyFilters(photos) {
   return photos.filter((p) => {
-    const cs = p.colors || [];
-    return [...activeColorFilters].some((c) => cs.includes(c));
+    if (
+      activeColorFilters.size &&
+      ![...activeColorFilters].some((c) => (p.colors || []).includes(c))
+    ) {
+      return false;
+    }
+    if (activeLensFilters.size) {
+      const pLens = (p.lens || "").trim();
+      if (!(pLens && activeLensFilters.has(pLens))) {
+        return false;
+      }
+    }
+    if (focalMin != null || focalMax != null) {
+      if (p.focal_length == null) return false;
+      if (focalMin != null && p.focal_length < focalMin) return false;
+      if (focalMax != null && p.focal_length > focalMax) return false;
+    }
+    return true;
   });
+}
+
+function updateFilterButton() {
+  btnColorFilter.classList.toggle("searchbar__filter--active", hasActiveFilters());
 }
 
 // Selection-bar dots: one per color; clicking applies/toggles it on ALL
@@ -875,12 +929,18 @@ for (const c of COLOR_ORDER) {
   selectionColorDots.appendChild(dot);
 }
 
-// Search-bar color filter (multi-select, union: a photo matches if it has
-// ANY of the selected colors).
+// Search-bar filter panel (C-14/C-15): color dots (union) + lens list
+// (union) + focal range — all three intersect each other.
 const activeColorFilters = new Set();
+const activeLensFilters = new Set();
+let focalMin = null; // mm, null = inactive
+let focalMax = null;
 const btnColorFilter = document.getElementById("btn-color-filter");
 const colorFilterPanel = document.getElementById("color-filter");
 const colorFilterDots = document.getElementById("color-filter-dots");
+const colorFilterLens = document.getElementById("color-filter-lens");
+const filterFocalMin = document.getElementById("filter-focal-min");
+const filterFocalMax = document.getElementById("filter-focal-max");
 
 function renderFilterDots() {
   colorFilterDots.textContent = "";
@@ -895,18 +955,91 @@ function renderFilterDots() {
       if (activeColorFilters.has(c)) activeColorFilters.delete(c);
       else activeColorFilters.add(c);
       renderFilterDots();
-      renderPhotos(applyColorFilter(allPhotos));
+      updateFilterButton();
+      renderPhotos(applyFilters(allPhotos));
     });
     colorFilterDots.appendChild(dot);
   }
-  btnColorFilter.classList.toggle(
-    "searchbar__filter--active",
-    activeColorFilters.size > 0
-  );
 }
 renderFilterDots();
 
-btnColorFilter.addEventListener("click", (e) => {
+// Lens list (cached per session; lens set only changes with new photos).
+let lensCache = null;
+async function ensureLensList() {
+  if (lensCache) return lensCache;
+  try {
+    lensCache = await invoke("get_lens_list");
+  } catch (e) {
+    reportJs("get-lenses", String(e));
+    lensCache = [];
+  }
+  return lensCache;
+}
+
+async function renderFilterLens() {
+  const lenses = await ensureLensList();
+  colorFilterLens.textContent = "";
+  if (!lenses.length) {
+    const d = document.createElement("div");
+    d.className = "tagpick-empty";
+    d.textContent = t("photos.filterLensEmpty");
+    colorFilterLens.appendChild(d);
+    return;
+  }
+  for (const l of lenses) {
+    const btn = document.createElement("button");
+    btn.className =
+      "filter-lens__item" + (activeLensFilters.has(l) ? " filter-lens__item--on" : "");
+    btn.textContent = l;
+    btn.title = l;
+    btn.addEventListener("click", () => {
+      if (activeLensFilters.has(l)) activeLensFilters.delete(l);
+      else activeLensFilters.add(l);
+      renderFilterLens();
+      updateFilterButton();
+      const filtered = applyFilters(allPhotos);
+      renderPhotos(filtered);
+      // Diagnostics (dev): if a lens filter kills everything while photos
+      // DO carry lens data, report what the frontend actually sees.
+      if (
+        activeLensFilters.size &&
+        !filtered.length &&
+        allPhotos.length &&
+        allPhotos.some((p) => p.lens)
+      ) {
+        reportJs(
+          "lens-filter",
+          JSON.stringify({
+            active: [...activeLensFilters],
+            sample: allPhotos
+              .slice(0, 5)
+              .map((p) => ({ id: p.id, lens: p.lens })),
+          })
+        );
+      }
+    });
+    colorFilterLens.appendChild(btn);
+  }
+}
+
+function readFocalFilters() {
+  const mn = filterFocalMin.value.trim();
+  const mx = filterFocalMax.value.trim();
+  focalMin = mn === "" ? null : Math.max(0, parseFloat(mn) || 0);
+  focalMax = mx === "" ? null : parseFloat(mx) || 0;
+}
+filterFocalMin.addEventListener("input", () => {
+  readFocalFilters();
+  updateFilterButton();
+  renderPhotos(applyFilters(allPhotos));
+});
+filterFocalMax.addEventListener("input", () => {
+  readFocalFilters();
+  updateFilterButton();
+  renderPhotos(applyFilters(allPhotos));
+});
+
+btnColorFilter.addEventListener("click", async (e) => {
   e.stopPropagation();
   colorFilterPanel.hidden = !colorFilterPanel.hidden;
   if (!colorFilterPanel.hidden) {
@@ -915,12 +1048,20 @@ btnColorFilter.addEventListener("click", (e) => {
     const r = btnColorFilter.getBoundingClientRect();
     colorFilterPanel.style.left = `${Math.max(8, r.left)}px`;
     colorFilterPanel.style.top = `${r.bottom + 6}px`;
+    await renderFilterLens();
   }
 });
 document.getElementById("btn-color-filter-clear").addEventListener("click", () => {
   activeColorFilters.clear();
+  activeLensFilters.clear();
+  focalMin = null;
+  focalMax = null;
+  filterFocalMin.value = "";
+  filterFocalMax.value = "";
   renderFilterDots();
-  renderPhotos(applyColorFilter(allPhotos));
+  renderFilterLens();
+  updateFilterButton();
+  renderPhotos(applyFilters(allPhotos));
 });
 document.addEventListener("click", (e) => {
   if (
@@ -1340,7 +1481,7 @@ async function loadPhotos(folderId = null) {
   try {
     const photos = await invoke("get_photos", { folderId });
     allPhotos = photos;
-    renderPhotos(applyColorFilter(photos));
+    renderPhotos(applyFilters(photos));
   } catch (e) {
     console.error(e);
   }
@@ -1355,6 +1496,11 @@ function formatSize(bytes) {
   return bytes + " B";
 }
 
+/// Focal length display: whole mm stays an integer, otherwise 1 decimal.
+function formatFocal(f) {
+  return Number.isInteger(f) ? String(f) : f.toFixed(1);
+}
+
 const preview = {
   els: {
     overlay: document.getElementById("preview-overlay"),
@@ -1367,7 +1513,21 @@ const preview = {
   async open(photo) {
     this.els.name.textContent = photo.filename;
     this.els.name.title = photo.path;
-    this.els.meta.textContent = `${photo.filename} · ${formatSize(photo.size)}`;
+    // Meta lines: name·size, then EXIF lens/focal when present (C-15).
+    this.els.meta.textContent = "";
+    const l1 = document.createElement("div");
+    l1.textContent = `${photo.filename} · ${formatSize(photo.size)}`;
+    this.els.meta.appendChild(l1);
+    if (photo.lens && photo.lens !== "----") {
+      const d = document.createElement("div");
+      d.textContent = t("preview.lens", { lens: photo.lens });
+      this.els.meta.appendChild(d);
+    }
+    if (photo.focal_length != null) {
+      const d = document.createElement("div");
+      d.textContent = t("preview.focal", { focal: formatFocal(photo.focal_length) });
+      this.els.meta.appendChild(d);
+    }
     this.els.error.hidden = true;
     this.els.error.textContent = t("preview.error");
     this.els.img.hidden = false;
@@ -1436,18 +1596,38 @@ function hideContextMenu() {
   }
 }
 
+/// Small transient toast (bottom-center) for actions without a natural place
+/// to report success (e.g. "wallpaper set").
+function toast(message) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
 function showContextMenu(x, y, photo) {
   hideContextMenu();
   const menu = document.createElement("div");
   menu.className = "ctx-menu";
-  const item = document.createElement("button");
-  item.className = "ctx-menu__item";
-  item.textContent = t("menu.reveal");
-  item.addEventListener("click", () => {
+  const reveal = document.createElement("button");
+  reveal.className = "ctx-menu__item";
+  reveal.textContent = t("menu.reveal");
+  reveal.addEventListener("click", () => {
     hideContextMenu();
     invoke("reveal_in_folder", { path: photo.path }).catch((e) => alert(String(e)));
   });
-  menu.appendChild(item);
+  const wallpaper = document.createElement("button");
+  wallpaper.className = "ctx-menu__item";
+  wallpaper.textContent = t("menu.wallpaper");
+  wallpaper.addEventListener("click", () => {
+    hideContextMenu();
+    invoke("set_wallpaper", { path: photo.path })
+      .then(() => toast(t("menu.wallpaperSet")))
+      .catch((e) => alert(String(e)));
+  });
+  menu.appendChild(reveal);
+  menu.appendChild(wallpaper);
   document.body.appendChild(menu);
   const w = menu.offsetWidth;
   const h = menu.offsetHeight;
@@ -1565,7 +1745,7 @@ async function runSearch() {
     try {
       const res = await invoke("search", { query: q2, mode });
       allPhotos = res;
-      renderPhotos(applyColorFilter(res));
+      renderPhotos(applyFilters(res));
     } catch (e) {
       console.error(e);
       renderPhotos([]);
@@ -1587,7 +1767,7 @@ async function runSearch() {
   try {
     const nameRes = await invoke("search_files", { query: qName });
     allPhotos = nameRes || [];
-    renderPhotos(applyColorFilter(allPhotos));
+    renderPhotos(applyFilters(allPhotos));
   } catch (e) {
     console.error(e);
   }

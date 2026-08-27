@@ -34,18 +34,26 @@ pub struct FileRecord {
     /// stored separately from text tags; a file can carry several.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<String>,
+    /// EXIF lens model (C-15), e.g. "EF50mm f/1.8 STM". None = not in EXIF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens: Option<String>,
+    /// EXIF focal length in mm (C-15). None = not in EXIF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focal_length: Option<f64>,
 }
 
 /// Shared SELECT column list for `files` (no alias) — column 9 is the
 /// comma-joined tag names (NULL when none), column 10 the comma-joined
-/// color labels (NULL when none).
+/// color labels, columns 11/12 the EXIF lens + focal length (C-15).
 const FILE_COLS: &str = "id, folder_id, COALESCE(display_path, path), filename, size, mtime, created_at, description, ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = files.id), \
-    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = files.id)";
+    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = files.id), \
+    lens, focal_length";
 /// Same, for queries aliasing the table as `f`.
 const FILE_COLS_F: &str = "f.id, f.folder_id, COALESCE(f.display_path, f.path), f.filename, f.size, f.mtime, f.created_at, f.description, f.ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = f.id), \
-    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = f.id)";
+    (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = f.id), \
+    f.lens, f.focal_length";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTag {
@@ -176,6 +184,15 @@ impl Db {
         }
         if !filecols.iter().any(|c| c == "ai_processed") {
             conn.execute_batch("ALTER TABLE files ADD COLUMN ai_processed INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !filecols.iter().any(|c| c == "lens") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN lens TEXT;")?;
+        }
+        if !filecols.iter().any(|c| c == "focal_length") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN focal_length REAL;")?;
+        }
+        if !filecols.iter().any(|c| c == "exif_checked") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN exif_checked INTEGER NOT NULL DEFAULT 0;")?;
         }
         // idx_files_ai needs the column to exist, so it is created after migrate.
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_files_ai ON files(ai_processed);")?;
@@ -726,7 +743,8 @@ impl Db {
             r#"INSERT INTO files(folder_id, path, display_path, filename, size, mtime, created_at, ai_processed)
                VALUES(?1,?2,?3,?4,?5,?6,?7,0)
                ON CONFLICT(path) DO UPDATE SET folder_id=excluded.folder_id, display_path=excluded.display_path,
-                 filename=excluded.filename, size=excluded.size, mtime=excluded.mtime, ai_processed=0"#,
+                 filename=excluded.filename, size=excluded.size, mtime=excluded.mtime, ai_processed=0,
+                 exif_checked=0"#,
             params![folder_id, path_key, display_path, filename, size, mtime, now],
         )
         .map_err(|e| e.to_string())?;
@@ -838,6 +856,91 @@ impl Db {
         )
         .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Store EXIF lens/focal for a file (C-15) and mark it exif-checked so
+    /// the startup backfill never re-reads it (files without EXIF stay NULL).
+    pub fn update_exif(
+        &self,
+        id: i64,
+        lens: Option<&str>,
+        focal_length: Option<f64>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE files SET lens=?1, focal_length=?2, exif_checked=1 WHERE id=?3",
+            params![lens, focal_length, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Files whose EXIF hasn't been read yet (C-15 startup backfill), paged.
+    pub fn get_files_missing_exif(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<(i64, String)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, COALESCE(display_path, path) FROM files WHERE exif_checked = 0 ORDER BY id LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit, offset], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Distinct lens names across the library (C-15 filter panel), sorted.
+    /// The "----" placeholder (cameras report "no lens mounted") is skipped.
+    pub fn get_lens_list(&self) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT lens FROM files WHERE lens IS NOT NULL AND lens != '' AND lens != '----' ORDER BY lens",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Remove EVERY tag (text tags of any source AND color labels) from the
+    /// given files — the multi-select "delete tags" action (C-15.1).
+    pub fn clear_all_tags_on_files(&self, ids: &[i64]) -> Result<usize, String> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let ph = vec!["?"; ids.len()].join(",");
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(ids.len());
+        for id in ids {
+            params.push(id);
+        }
+        let removed = conn
+            .execute(
+                &format!("DELETE FROM file_tags WHERE file_id IN ({ph})"),
+                params.as_slice(),
+            )
+            .map_err(|e| e.to_string())?
+            + conn
+                .execute(
+                    &format!("DELETE FROM color_tags WHERE file_id IN ({ph})"),
+                    params.as_slice(),
+                )
+                .map_err(|e| e.to_string())?;
+        Ok(removed)
     }
 
     /// (id, embedding) for every file with an embedding (ai_processed >= 2).
@@ -1000,6 +1103,8 @@ impl Db {
 fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
     let tags_raw: Option<String> = row.get(9)?;
     let colors_raw: Option<String> = row.get(10)?;
+    let lens: Option<String> = row.get(11)?;
+    let focal_length: Option<f64> = row.get(12)?;
     let tags: Vec<String> = tags_raw
         .map(|s| s.split(',').map(|t| t.to_string()).collect())
         .unwrap_or_default();
@@ -1019,6 +1124,8 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
         score: None,
         tags,
         colors,
+        lens,
+        focal_length,
     })
 }
 // Unit tests: path normalization, DB migration, scanner, tag search (ADD.md §11).
@@ -1273,6 +1380,34 @@ mod tests {
         // Deleting the files cascades their color rows (foreign_keys=ON).
         db.delete_missing(fid, &std::collections::HashSet::new()).unwrap();
         assert!(db.get_photos(Some(fid)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn exif_columns_roundtrip() {
+        let (_dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let id = db.get_photos(Some(fid)).unwrap()[0].id;
+
+        // The scanner already marked the file exif-checked (no EXIF found).
+        assert!(db.get_files_missing_exif(100, 0).unwrap().is_empty());
+        // Backfill-style update: explicit lens/focal wins.
+        db.update_exif(id, Some("EF50mm f/1.8"), Some(50.0)).unwrap();
+        let rec = db.get_file_by_id(id).unwrap().unwrap();
+        assert_eq!(rec.lens.as_deref(), Some("EF50mm f/1.8"));
+        assert_eq!(rec.focal_length, Some(50.0));
+        assert_eq!(db.get_lens_list().unwrap(), vec!["EF50mm f/1.8".to_string()]);
+        // A changed file is re-marked for extraction — simulate a content
+        // change via upsert directly (the scanner would re-extract right
+        // away, so bypass it here).
+        let display = folder.path().join("a.jpg").to_string_lossy().to_string();
+        let key = crate::utils::normalize_storage_path(&display);
+        db.upsert_file(fid, &key, &display, "a.jpg", 999, 999).unwrap();
+        let missing = db.get_files_missing_exif(100, 0).unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, id);
     }
 
     #[test]

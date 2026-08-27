@@ -35,10 +35,18 @@ export const MESSAGES = {
       "selectedCount": "已选 {count} 张",
       "addTagSelected": "添加标签",
       "tagsAdded": "已为 {count} 张照片添加「{tag}」",
+      "deleteTags": "删除标签",
+      "deleteTagsConfirm": "删除选中 {count} 张照片的所有标签（文字和颜色）？",
+      "tagsDeleted": "已清除 {count} 张照片",
       "filterColor": "颜色筛选",
       "filterBtn": "筛选",
       "filterClear": "清除",
-      "filterEmpty": "没有符合颜色筛选的照片",
+      "filterLens": "镜头",
+      "filterLensEmpty": "库中没有镜头数据",
+      "filterFocal": "焦段",
+      "filterFocalMin": "最小 mm",
+      "filterFocalMax": "最大 mm",
+      "filterEmpty": "没有符合筛选条件的照片",
       "status": {
         "count": "{count} 张照片",
         "partial": "{shown} / {total} 张照片"
@@ -76,11 +84,15 @@ export const MESSAGES = {
       }
     },
     "menu": {
-      "reveal": "在文件资源管理器中显示"
+      "reveal": "在文件资源管理器中显示",
+      "wallpaper": "设为壁纸",
+      "wallpaperSet": "壁纸已设置"
     },
     "preview": {
       "close": "关闭预览",
-      "error": "无法预览此文件"
+      "error": "无法预览此文件",
+      "lens": "镜头：{lens}",
+      "focal": "焦距：{focal} mm"
     },
     "dialog": {
       "confirmTitle": "确认操作",
@@ -176,10 +188,18 @@ export const MESSAGES = {
       "selectedCount": "{count} selected",
       "addTagSelected": "Add tag",
       "tagsAdded": "“{tag}” added to {count} photos",
+      "deleteTags": "Delete tags",
+      "deleteTagsConfirm": "Remove ALL tags (text and colors) from the {count} selected photos?",
+      "tagsDeleted": "{count} photos cleared",
       "filterColor": "Color filter",
       "filterBtn": "Filter",
       "filterClear": "Clear",
-      "filterEmpty": "No photos match the color filter",
+      "filterLens": "Lens",
+      "filterLensEmpty": "No lens info in the library",
+      "filterFocal": "Focal length",
+      "filterFocalMin": "Min mm",
+      "filterFocalMax": "Max mm",
+      "filterEmpty": "No photos match the filters",
       "status": {
         "count": "{count} photos",
         "partial": "{shown} / {total} photos"
@@ -217,11 +237,15 @@ export const MESSAGES = {
       }
     },
     "menu": {
-      "reveal": "Show in File Explorer"
+      "reveal": "Show in File Explorer",
+      "wallpaper": "Set as wallpaper",
+      "wallpaperSet": "Wallpaper set"
     },
     "preview": {
       "close": "Close preview",
-      "error": "Cannot preview this file"
+      "error": "Cannot preview this file",
+      "lens": "Lens: {lens}",
+      "focal": "Focal length: {focal} mm"
     },
     "dialog": {
       "confirmTitle": "Confirm action",
