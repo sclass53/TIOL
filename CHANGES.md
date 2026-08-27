@@ -3,6 +3,18 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-16 · 2025-07 — PR 合并前检查 workflow
+
+**需求**：有 Pull Request（合并前）时运行全面检查：① 双语支持；② `.github/workflows` 不得被 PR 修改；③ 可以编译/构建。
+
+**实现**：
+
+1. **新 workflow `.github/workflows/pr-check.yml`**（`on: pull_request`，两个 job）：
+   - `checks`（ubuntu-latest）：① `git diff base...HEAD -- .github/` 检测 PR 是否改动 workflow 目录——有改动直接报错（发布流水线神圣不可侵犯）；② `node scripts/check-i18n.js`；③ 前端 ESM 语法检查（`node --input-type=module --check`）。
+   - `build-check`（windows-latest）：`cargo check`（发布平台编译验证，`dtolnay/rust-toolchain@stable`）。
+2. **新校验脚本 `scripts/check-i18n.js`**（本地/CI 通用）：① en-US 与 zh-CN **深展平键集完全一致**（缺失即报错）；② app.js/index.html 引用的全部 i18n 键必须存在（排除 DOM 标签误匹配）；③ `messages.js` 与 JSON 源**逐字节同步**（不同步提示重跑 gen-messages.js）；任一失败 exit 1。已做破坏性测试（删键 → 捕获缺失 + 同步错误，恢复后通过）。
+3. 发布构建仍只在 `build.yml`（tag 触发），本文件只守卫合并。
+
 ## C-15 · 2025-07 — EXIF 镜头/焦距：预览显示 + 镜头/焦段筛选
 
 **需求**：① 读取照片 EXIF 镜头/焦距，不在卡片上直接显示，预览打开后在右侧窗口显示；② 筛选按钮面板增加"镜头"选项（勾选特定镜头）与"焦段"选项（min–max 范围），与颜色筛选互为**交集**；③ 筛选条件要求了某条数据而照片 EXIF 没有该条时，该照片不进入结果。

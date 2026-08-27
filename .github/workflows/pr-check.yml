@@ -1,0 +1,48 @@
+# PR gate (C-16): runs on EVERY pull request BEFORE merge.
+# 1. .github/workflows must NOT change in the PR (release pipeline is sacred).
+# 2. Bilingual support: en-US / zh-CN key parity + referenced keys +
+#    messages.js sync (scripts/check-i18n.js).
+# 3. The project must compile (cargo check on Windows — the release platform).
+#
+# Release builds stay in build.yml (tags only); this file only guards merges.
+
+name: PR Check
+
+on:
+  pull_request:
+
+jobs:
+  checks:
+    name: Workflow-diff / i18n / frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Forbid changes to .github/workflows
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="$(git diff --name-only "$base...HEAD" -- .github/ || true)"
+          if [ -n "$changed" ]; then
+            echo "::error::Pull requests must not modify .github/workflows. Revert those files and re-push."
+            echo "$changed"
+            exit 1
+          fi
+
+      - name: i18n bilingual check
+        run: node scripts/check-i18n.js
+
+      - name: Frontend syntax check
+        run: node --input-type=module --check < src/app.js
+
+  build-check:
+    name: Rust compile check (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check
