@@ -123,6 +123,9 @@
     "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"
   },
   "settings": {
+    "theme": "Theme",
+    "themeDark": "Dark",
+    "themeLight": "Light",
     "title": "Settings",
     "language": "Language",
     "languageZh": "中文",
