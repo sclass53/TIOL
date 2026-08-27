@@ -126,6 +126,9 @@ export const MESSAGES = {
       "clearAllConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？"
     },
     "settings": {
+      "theme": "主题",
+      "themeDark": "深色",
+      "themeLight": "浅色",
       "title": "设置",
       "language": "语言",
       "languageZh": "中文",
@@ -279,6 +282,9 @@ export const MESSAGES = {
       "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"
     },
     "settings": {
+      "theme": "Theme",
+      "themeDark": "Dark",
+      "themeLight": "Light",
       "title": "Settings",
       "language": "Language",
       "languageZh": "中文",

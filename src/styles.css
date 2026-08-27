@@ -1124,3 +1124,38 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ============================================================
+   Light theme — applied via <html data-theme="light">
+   ============================================================ */
+html[data-theme="light"] {
+  --bg-primary: #F5F5F7;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #E8E8ED;
+  --separator: #D1D1D6;
+  --text-primary: #1C1C1E;
+  --text-secondary: #6E6E73;
+  --accent: #007AFF;
+}
+
+/* Floating tagging badge — light surface */
+html[data-theme="light"] .tagging-badge {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Debug log panel — light */
+html[data-theme="light"] .settings__log {
+  background: #F0F0F3;
+  color: #1C1C1E;
+}
+
+/* Overlays — slightly dimmer on light so they still read as modal */
+html[data-theme="light"] .dialog-overlay,
+html[data-theme="light"] .preview-overlay {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Card AI-score badge stays dark-on-light for contrast */
+html[data-theme="light"] .card__score {
+  background: rgba(0, 0, 0, 0.72);
+}

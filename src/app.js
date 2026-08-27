@@ -40,6 +40,7 @@ const els = {
   viewTags: document.getElementById("view-tags"),
   viewSettings: document.getElementById("view-settings"),
   langOptions: document.getElementById("lang-options"),
+  themeOptions: document.getElementById("theme-options"),
   toggleHwDecode: document.getElementById("toggle-hw-decode"),
   hwDecodeHint: document.getElementById("hw-decode-hint"),
   btnRestart: document.getElementById("btn-restart"),
@@ -108,7 +109,30 @@ function switchView(name) {
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos) requestAnimationFrame(fillGridIfNeeded);
 }
-
+// --- Theme (dark / light) — persisted in localStorage, no backend needed ---
+const THEME_KEY = "tiol-theme";
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+function initTheme() {
+  let saved = "dark";
+  try { saved = localStorage.getItem(THEME_KEY) || "dark"; } catch (e) {}
+  applyTheme(saved);
+}
+function renderThemeButtons() {
+  const cur = document.documentElement.getAttribute("data-theme") || "dark";
+  els.themeOptions.querySelectorAll("[data-theme]").forEach((btn) => {
+    btn.classList.toggle("btn--active", btn.dataset.theme === cur);
+  });
+}
+els.themeOptions.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-theme]");
+  if (!btn) return;
+  const theme = btn.dataset.theme;
+  applyTheme(theme);
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  renderThemeButtons();
+});
 els.navPhotos.addEventListener("click", () => {
   switchView("photos");
   // Re-fetch so cards show freshly computed tags (stale-tag fix).
@@ -136,6 +160,7 @@ async function renderSettings() {
   els.langOptions.querySelectorAll("[data-lang]").forEach((btn) => {
     btn.classList.toggle("btn--active", btn.dataset.lang === cur);
   });
+  renderThemeButtons();
   renderHwDecode();
   detectAndReportRenderer();
   refreshModelStatus();
@@ -1817,6 +1842,7 @@ listen("scan-complete", () => {
 // Language switch: re-render current view with new locale
 onLanguageChange(() => {
   applyStaticI18n();
+    initTheme();
   if (!els.viewPhotos.classList.contains("view--hidden")) {
     renderPhotos(currentPhotos);
   } else if (!els.viewFolders.classList.contains("view--hidden")) {
@@ -1836,6 +1862,7 @@ onLanguageChange(() => {
     console.error(e);
   }
   applyStaticI18n();
+    initTheme();
   // Debug flag gates AI-confidence badges — read it before first render.
   try {
     debugMode = (await invoke("get_setting", { key: "debug" })) === "1";
