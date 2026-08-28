@@ -10,6 +10,7 @@ mod exif;
 mod logbuf;
 mod scanner;
 mod search;
+mod update;
 mod utils;
 mod watcher;
 
@@ -739,6 +740,13 @@ fn set_wallpaper(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Self-update detection (C-18): hash the running exe, fetch
+/// tiol.netlify.app/version.json, compare. Never errors — see update.rs.
+#[tauri::command]
+async fn check_update() -> update::UpdateInfo {
+    update::check_update().await
+}
+
 #[tauri::command]
 fn get_ai_status(state: tauri::State<AppState>) -> Result<String, String> {
     let guard = state.ai_status.lock().unwrap();
@@ -1302,6 +1310,7 @@ fn main() {
             get_ai_status,
             set_ai_provider,
             set_wallpaper,
+            check_update,
             set_debug_mode,
             get_logs,
             report_js_event

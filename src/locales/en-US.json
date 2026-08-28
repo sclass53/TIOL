@@ -107,6 +107,15 @@
     "ok": "OK",
     "cancel": "Cancel"
   },
+  "update": {
+    "label": "Updates",
+    "check": "Check for updates",
+    "available": "New version {version} available",
+    "download": "Download",
+    "later": "Later",
+    "upToDate": "You're up to date",
+    "offline": "Update check failed (offline?)"
+  },
   "tagging": {
     "badge": "Tagging in progress",
     "indexing": "Indexing",

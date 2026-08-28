@@ -1932,6 +1932,54 @@ onLanguageChange(() => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Self-update detection (C-18): hash of the running exe vs
+// tiol.netlify.app/version.json. Checked once ~2s after startup + the
+// settings-page button. The banner appears only when a remote hash differs.
+// ---------------------------------------------------------------------------
+const updateBanner = document.getElementById("update-banner");
+const updateText = document.getElementById("update-text");
+const btnUpdateDownload = document.getElementById("btn-update-download");
+const btnUpdateLater = document.getElementById("btn-update-later");
+const btnCheckUpdate = document.getElementById("btn-check-update");
+let updateUrl = null;
+
+function showUpdateBanner(version, url) {
+  updateUrl = url;
+  updateText.textContent = t("update.available", { version });
+  updateBanner.hidden = false;
+}
+
+btnUpdateDownload.addEventListener("click", () => {
+  updateBanner.hidden = true;
+  if (updateUrl) {
+    try {
+      window.__TAURI__.shell.open(updateUrl).catch((e) => alert(String(e)));
+    } catch (e) {
+      alert(String(e));
+    }
+  }
+});
+btnUpdateLater.addEventListener("click", () => {
+  updateBanner.hidden = true;
+});
+
+async function checkForUpdates(manual) {
+  try {
+    const info = await invoke("check_update");
+    if (info.available) {
+      showUpdateBanner(info.version || "", info.url || "");
+    } else if (manual) {
+      toast(t("update.upToDate"));
+    }
+  } catch (e) {
+    // Offline / parse problems: stay silent unless the user asked manually.
+    if (manual) toast(t("update.offline"));
+  }
+}
+
+btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
+
 // Initial load
 (async () => {
   try {
@@ -1950,4 +1998,7 @@ onLanguageChange(() => {
   loadPhotos();
   loadFolders();
   detectAndReportRenderer();
+  // Startup update check (C-18): deferred so it never races first paint;
+  // dev builds short-circuit in the backend (debug_assertions).
+  setTimeout(() => checkForUpdates(false), 2000);
 })();

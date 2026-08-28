@@ -110,6 +110,15 @@ export const MESSAGES = {
       "ok": "确定",
       "cancel": "取消"
     },
+    "update": {
+      "label": "更新",
+      "check": "检查更新",
+      "available": "发现新版本 {version}",
+      "download": "下载更新",
+      "later": "稍后",
+      "upToDate": "已是最新版本",
+      "offline": "检查更新失败（离线？）"
+    },
     "tagging": {
       "badge": "正在标记中",
       "indexing": "正在索引",
@@ -276,6 +285,15 @@ export const MESSAGES = {
       "confirmTitle": "Confirm action",
       "ok": "OK",
       "cancel": "Cancel"
+    },
+    "update": {
+      "label": "Updates",
+      "check": "Check for updates",
+      "available": "New version {version} available",
+      "download": "Download",
+      "later": "Later",
+      "upToDate": "You're up to date",
+      "offline": "Update check failed (offline?)"
     },
     "tagging": {
       "badge": "Tagging in progress",

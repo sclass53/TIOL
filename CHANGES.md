@@ -3,6 +3,21 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-18 · 2025-08 — 基于 SHA256 的自我更新检测
+
+**需求**：工作流 push 到发布仓库（TIOL-site → tiol.netlify.app）时，在 version.json 中记录 Windows/macOS 可执行文件的 SHA256；本地启动时计算**自身 current_exe 的 SHA256** 与远程比对，实现检测更新——**更新判断完全不依赖烧录进 exe 的版本号**（tauri version 保持 0.1.0 不动），版本号仅用于展示。
+
+**实现**：
+
+1. **version.json 新格式**（`MNFilm-Industry/TIOL-site` 根目录，Netlify 托管）：在原有 version/tag/updated 基础上新增 `platforms.{windows,macos}.{sha256,url}`——sha256 为对应平台可执行文件哈希，url 为 Netlify 固定下载直链（`https://tiol.netlify.app/releases/latest/TIOL-{win64-portable,macos-arm64}.zip`）。
+2. **CI**（build.yml `push-to-site-repo` job，替换原 version.json 步骤）：Windows 用 `unzip -p …/TIOL-win64-portable.zip tiol.exe | sha256sum` 流式计算 zip 内 exe 的哈希；macOS 取 `.app/Contents/MacOS` 下**非 dylib 的可执行文件**（通配符查找）计算；两平台都空才报错（单平台缺失留空，不阻塞）；bash heredoc 生成 JSON 后走原有 commit/push。
+3. **后端**（新模块 `update.rs`）：`sha256_hex`（1MiB 分块流式计算，依赖已有 sha2/hex）；纯函数 `evaluate_update(remote_json, local_sha, platform)`（可单测：匹配→无更新、不匹配→有更新+版本/URL、缺平台字段/坏 JSON/空 sha→无更新）；命令 `check_update()`：**debug 构建直接跳过**（dev exe 哈希永不匹配）、`current_exe()` 哈希、reqwest GET version.json（**5 秒超时**），任何失败静默返回"无更新"（log::debug，绝不打扰用户）。
+4. **前端**：启动后延迟 2 秒自动检查一次；有新版本 → 顶部**更新横幅**（slide-down 动画：「发现新版本 vX」+「下载更新」（`shell.open` 打开 Netlify 直链，capability 已有 `shell:allow-open`）+「稍后」）；设置页新增「更新/检查更新」行（手动触发，无更新 toast「已是最新版本」，离线轻提示）。不轮询、不常驻。
+5. **i18n**：`update.label/check/available/download/later/upToDate/offline`（中英同步），messages.js 重新生成。
+6. **单测**：`sha256_hex` 已知向量（sha256("hello")=2cf24dba…）+ `evaluate_update` 四种情形，预计 18 项全过。
+
+**行为对照**：发布 v0.1.7 → version.json 含真实哈希 → 旧版用户启动 2 秒后见横幅 → 点下载打开直链 ✓；运行最新版无横幅 ✓；断网/离线/dev 模式均静默 ✓；版本号判断不依赖 exe 内烧录值 ✓。
+
 ## C-17 · 2025-08 — 照片星级评分 + 按评分筛选
 
 **需求**：① 在每张照片预览图下方加一个打星界面，可打 1–5 星——未打星显示白色边框，打上后黄色填充；② 用下拉菜单筛选照片，只显示星值 ≥ 某阈值的照片。

@@ -119,6 +119,10 @@
             <span class="settings__hint" id="model-status">…</span>
           </div>
           <div class="settings__row">
+            <span class="settings__label" data-i18n="update.label">更新</span>
+            <button class="btn btn--ghost" id="btn-check-update" data-i18n="update.check">检查更新</button>
+          </div>
+          <div class="settings__row">
             <span class="settings__label" data-i18n="settings.debug">调试模式</span>
             <button class="btn btn--ghost" id="toggle-debug" data-i18n="settings.off">关</button>
           </div>
@@ -209,6 +213,14 @@
       <div class="tagging-badge__fill" id="tagging-fill"></div>
     </div>
     <span class="tagging-badge__count" id="tagging-count"></span>
+  </div>
+
+  <!-- Self-update banner (top-center, C-18): hash comparison against
+       tiol.netlify.app/version.json — shown once at startup when newer -->
+  <div class="update-banner" id="update-banner" hidden>
+    <span class="update-banner__text" id="update-text"></span>
+    <button class="btn btn--primary update-banner__btn" id="btn-update-download" data-i18n="update.download">下载更新</button>
+    <button class="btn btn--ghost update-banner__btn" id="btn-update-later" data-i18n="update.later">稍后</button>
   </div>
 
   <script type="module" src="app.js"></script>

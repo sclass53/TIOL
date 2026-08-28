@@ -212,11 +212,34 @@ jobs:
           token: ${{ secrets.REPO_PUSH_TOKEN }}   # 需要提前配置该 Secret
           path: ./site-repo
 
-      - name: Update version.json (for website)
+      - name: Compute binary hashes and update version.json (update check, C-18)
         run: |
           cd ./site-repo
           VERSION=${GITHUB_REF_NAME#v}
-          echo "{\"version\": \"$VERSION\", \"tag\": \"$GITHUB_REF_NAME\", \"updated\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > version.json
+          # Windows: SHA256 of tiol.exe inside the portable zip.
+          WIN_SHA=$(unzip -p ../artifacts/windows/TIOL-win64-portable.zip tiol.exe 2>/dev/null | sha256sum | cut -d' ' -f1)
+          # macOS: SHA256 of the .app executable (NOT the embedded dylib).
+          APP=$(ls -d ../artifacts/macos/*.app 2>/dev/null | head -1)
+          MAC_SHA=""
+          if [ -n "$APP" ]; then
+            EXE=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f ! -name "*.dylib" 2>/dev/null | head -1)
+            [ -n "$EXE" ] && MAC_SHA=$(sha256sum "$EXE" | cut -d' ' -f1)
+          fi
+          if [ -z "$WIN_SHA" ] && [ -z "$MAC_SHA" ]; then
+            echo "::error::both platform hashes are empty — cannot publish version.json"
+            exit 1
+          fi
+          cat > version.json <<EOF
+          {
+            "version": "$VERSION",
+            "tag": "$GITHUB_REF_NAME",
+            "updated": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            "platforms": {
+              "windows": { "sha256": "$WIN_SHA", "url": "https://tiol.netlify.app/releases/latest/TIOL-win64-portable.zip" },
+              "macos": { "sha256": "$MAC_SHA", "url": "https://tiol.netlify.app/releases/latest/TIOL-macos-arm64.zip" }
+            }
+          }
+          EOF
           cat version.json
 
       - name: Organize and copy artifacts into releases/ directory
