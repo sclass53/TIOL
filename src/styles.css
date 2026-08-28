@@ -329,7 +329,7 @@ html, body {
 
 .card {
   width: 180px;
-  height: 190px; /* 132px thumb + 18px star row + 40px meta (C-17) */
+  height: 184px; /* 132px thumb + 18px star row + 34px meta (C-17) */
   background: var(--bg-surface);
   border: 1px solid var(--bg-elevated);
   border-radius: var(--radius);
@@ -338,7 +338,7 @@ html, body {
   flex-direction: column;
   /* Offscreen cards skip layout/paint (WebView2/Chromium) — big win for large grids */
   content-visibility: auto;
-  contain-intrinsic-size: 180px 190px;
+  contain-intrinsic-size: 180px 184px;
 }
 
 .card:hover { border-color: var(--accent); }
@@ -430,11 +430,11 @@ html, body {
 }
 
 .card__meta {
-  height: 40px;
-  padding: 2px 8px 6px; /* bottom-heavy so the text sits lower (C-17) */
+  height: 34px;
+  padding: 2px 8px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 2px;
   font-size: 12px;
   color: var(--text-secondary);
