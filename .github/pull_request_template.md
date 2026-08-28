@@ -17,6 +17,10 @@
 - [ ] I have made corresponding changes to the documentation (if needed).
 - [ ] My changes generate no new warnings or errors.
 - [ ] New and existing unit tests pass locally with my changes.
+- [ ] I have a screenshot to prove the changes.
+
+## Screenshot (mandatory)
+<!-- insert screenshot -->
 
 ## Related Issue(s)
 <!-- Link any related issues using the GitHub syntax, e.g., "Fixes #123" or "Closes #456". -->
