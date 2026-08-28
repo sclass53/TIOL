@@ -324,6 +324,25 @@ fn get_file_tags(state: tauri::State<AppState>, file_id: i64) -> Result<Vec<db::
     state.db.get_file_tags(file_id)
 }
 
+/// Star rating (C-17): 1-5 stars, 0 clears. Returns the updated record so
+/// the frontend can refresh the card in place without a full re-render.
+#[tauri::command]
+fn set_rating(
+    state: tauri::State<AppState>,
+    file_id: i64,
+    rating: i64,
+) -> Result<db::FileRecord, String> {
+    if !(0..=5).contains(&rating) {
+        return Err("rating must be between 0 and 5".to_string());
+    }
+    log::info!("set_rating file_id={} rating={}", file_id, rating);
+    state.db.set_rating(file_id, rating)?;
+    state
+        .db
+        .get_file_by_id(file_id)?
+        .ok_or_else(|| "file not found".to_string())
+}
+
 #[tauri::command]
 fn get_setting(
     state: tauri::State<AppState>,
@@ -1260,6 +1279,7 @@ fn main() {
             update_description,
             update_tags,
             get_file_tags,
+            set_rating,
             get_setting,
             set_setting,
             restart_app,

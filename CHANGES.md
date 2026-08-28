@@ -3,6 +3,20 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-17 · 2025-08 — 照片星级评分 + 按评分筛选
+
+**需求**：① 在每张照片预览图下方加一个打星界面，可打 1–5 星——未打星显示白色边框，打上后黄色填充；② 用下拉菜单筛选照片，只显示星值 ≥ 某阈值的照片。
+
+**实现**：
+
+1. **数据存储**：`files` 表新增 `rating INTEGER`（NULL = 未评分；migrate 自动加列，新建库 schema 同步）。`upsert_file` 的 `ON CONFLICT ... DO UPDATE` **不触碰 rating**——重新扫描/内容变更不会清掉用户评分（测试断言此行为）。`FileRecord` 新增 `rating: Option<i64>`（serde skip None）；`FILE_COLS/FILE_COLS_F` 追加为第 13 列——所有照片查询、文件名/语义/标签搜索自动携带。
+2. **后端命令** `set_rating(file_id, rating)`：0–5 校验（0 = 清除，写 NULL），返回更新后的 `FileRecord` 供卡片原地刷新，无需整列重渲染。
+3. **卡片打星 UI**：`buildCard` 在缩略图与文件名之间插入 `.card__stars` 行（5 颗星，22px）。未评分星星为细白描边（`-webkit-text-stroke`，跟随主题色 `--text-primary`），评分后黄色填充（`#ffcc00`）；悬停时预览填充到光标所在星。点击第 N 颗星评 N 分，**再次点击当前分值清除**；点击 stopPropagation 不触发预览，多选拖拽区域排除星标行。
+4. **筛选下拉菜单**：搜索栏新增 `<select id="rating-filter">`（全部 / ≥1 / ≥2 / ≥3 / ≥4 / ≥5 星），选项走 i18n（`photos.ratingAll`…`photos.rating5`）。前端 `minRating` 状态参与 `applyFilters`（与颜色 ∩ 镜头 ∩ 焦段同为交集；未评分的照片视为 0 分，过不了 ≥1 的筛选）；`hasActiveFilters` 同步纳入，空结果显示「没有符合筛选条件的照片」；筛选面板「清除」按钮同时重置评分下拉。
+5. **单测** `rating_roundtrip`：默认无评分 → 1–5 设置回读 → 0 清除 → 重扫（upsert）不丢评分。
+
+**行为对照**：卡片预览图下方点 3 星 → 前 3 颗星黄色填充 ✓；再点第 3 颗 → 清除 ✓；下拉选「≥ 3 星」→ 只显示评了 ≥3 分的照片 ✓；搜索/其他筛选与评分叠加为交集 ✓。
+
 ## C-16 · 2025-07 — PR 合并前检查 workflow
 
 **需求**：有 Pull Request（合并前）时运行全面检查：① 双语支持；② `.github/workflows` 不得被 PR 修改；③ 可以编译/构建。

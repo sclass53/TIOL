@@ -25,6 +25,14 @@
             <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
           </select>
           <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
+          <select class="searchbar__mode" id="rating-filter" data-i18n-title="photos.ratingFilter">
+            <option value="0" data-i18n="photos.ratingAll">全部</option>
+            <option value="1" data-i18n="photos.rating1">≥ 1 星</option>
+            <option value="2" data-i18n="photos.rating2">≥ 2 星</option>
+            <option value="3" data-i18n="photos.rating3">≥ 3 星</option>
+            <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
+            <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
+          </select>
           <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
