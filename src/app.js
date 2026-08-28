@@ -729,7 +729,7 @@ document.addEventListener("keydown", (e) => {
 let dragSel = null;
 els.photoGrid.addEventListener("mousedown", (e) => {
   if (!selectMode || e.button !== 0) return;
-  if (e.target.closest("button, input, select, .card__edit")) return;
+  if (e.target.closest("button, input, select, .card__edit, .card__stars")) return;
   const gridRect = els.photoGrid.getBoundingClientRect();
   // Don't hijack the vertical scrollbar.
   if (e.clientX > gridRect.left + gridRect.width - 16) return;
@@ -885,12 +885,22 @@ const COLOR_HEX = {
 // The unfiltered result of the current query — filters re-apply to it.
 let allPhotos = [];
 
+// Star rating filter (C-17): only show photos with rating >= minRating.
+// 0 = no filter. Driven by the #rating-filter dropdown in the search bar.
+let minRating = 0;
+const ratingFilterEl = document.getElementById("rating-filter");
+ratingFilterEl.addEventListener("change", () => {
+  minRating = parseInt(ratingFilterEl.value, 10) || 0;
+  renderPhotos(applyFilters(allPhotos));
+});
+
 function hasActiveFilters() {
   return (
     activeColorFilters.size > 0 ||
     activeLensFilters.size > 0 ||
     focalMin != null ||
-    focalMax != null
+    focalMax != null ||
+    minRating > 0
   );
 }
 
@@ -916,6 +926,8 @@ function applyFilters(photos) {
       if (focalMin != null && p.focal_length < focalMin) return false;
       if (focalMax != null && p.focal_length > focalMax) return false;
     }
+    // Star rating (C-17): photos without a rating (0) fail a >= filter.
+    if (minRating > 0 && (p.rating || 0) < minRating) return false;
     return true;
   });
 }
@@ -1083,6 +1095,8 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   focalMax = null;
   filterFocalMin.value = "";
   filterFocalMax.value = "";
+  minRating = 0;
+  ratingFilterEl.value = "0";
   renderFilterDots();
   renderFilterLens();
   updateFilterButton();
@@ -1369,6 +1383,33 @@ async function closeEditDialog(save) {
   }
 }
 
+/// Fill the first `rating` stars of a card's star row (0 = all empty, 5 =
+/// all filled). Rerun after a rating change to refresh the card in place.
+function renderCardStars(el, rating) {
+  for (let i = 0; i < el.children.length; i++) {
+    el.children[i].classList.toggle("card__star--on", i < rating);
+  }
+}
+
+/// Set a photo's star rating (C-17): clicking star N rates it N; clicking
+/// the current value again clears it. Persists via set_rating, refreshes
+/// the card in place, then re-applies an active rating filter so a photo
+/// that dropped below the threshold disappears right away.
+async function setPhotoRating(p, n) {
+  const next = p.rating === n ? 0 : n;
+  try {
+    const updated = await invoke("set_rating", { fileId: p.id, rating: next });
+    p.rating = updated.rating || 0;
+    if (p._card) {
+      const stars = p._card.querySelector(".card__stars");
+      if (stars) renderCardStars(stars, p.rating);
+    }
+    if (minRating > 0) renderPhotos(applyFilters(allPhotos));
+  } catch (e) {
+    alert(String(e));
+  }
+}
+
 /// Re-render the meta row of one card (name + color dots + tag list) after a
 /// tag/color edit.
 function renderCardColors(el, colors) {
@@ -1481,6 +1522,40 @@ function buildCard(p) {
     meta.appendChild(descEl);
   }
   card.appendChild(thumb);
+  // Star rating row (C-17): below the thumbnail — click star N to rate the
+  // photo 1-5 (clicking the current value clears it); unrated stars show a
+  // white outline, rated stars a yellow fill. Never opens the preview.
+  const stars = document.createElement("div");
+  stars.className = "card__stars";
+  stars.title = t("card.rating.title");
+  for (let n = 1; n <= 5; n++) {
+    const s = document.createElement("span");
+    s.className = "card__star";
+    s.textContent = "★";
+    s.dataset.n = String(n);
+    s.title = t("card.rating.star", { n });
+    s.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      setPhotoRating(p, n);
+    });
+    stars.appendChild(s);
+  }
+  // Hover preview: fill stars up to the one under the cursor.
+  stars.addEventListener("mouseover", (ev) => {
+    const s = ev.target.closest(".card__star");
+    if (!s) return;
+    const n = Number(s.dataset.n);
+    for (let i = 0; i < 5; i++) {
+      stars.children[i].classList.toggle("card__star--hover", i < n);
+    }
+  });
+  stars.addEventListener("mouseleave", () => {
+    for (let i = 0; i < 5; i++) {
+      stars.children[i].classList.remove("card__star--hover");
+    }
+  });
+  renderCardStars(stars, p.rating || 0);
+  card.appendChild(stars);
   card.appendChild(meta);
   p._card = card;
   // click: prioritize this card's thumbnail (queue head), then open preview.

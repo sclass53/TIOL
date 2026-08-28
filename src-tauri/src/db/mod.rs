@@ -40,20 +40,24 @@ pub struct FileRecord {
     /// EXIF focal length in mm (C-15). None = not in EXIF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focal_length: Option<f64>,
+    /// User star rating (C-17): 1-5, None = unrated (0 on the frontend).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<i64>,
 }
 
 /// Shared SELECT column list for `files` (no alias) — column 9 is the
 /// comma-joined tag names (NULL when none), column 10 the comma-joined
-/// color labels, columns 11/12 the EXIF lens + focal length (C-15).
+/// color labels, columns 11/12 the EXIF lens + focal length (C-15),
+/// column 13 the user star rating (C-17, NULL when unrated).
 const FILE_COLS: &str = "id, folder_id, COALESCE(display_path, path), filename, size, mtime, created_at, description, ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = files.id), \
     (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = files.id), \
-    lens, focal_length";
+    lens, focal_length, rating";
 /// Same, for queries aliasing the table as `f`.
 const FILE_COLS_F: &str = "f.id, f.folder_id, COALESCE(f.display_path, f.path), f.filename, f.size, f.mtime, f.created_at, f.description, f.ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = f.id), \
     (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = f.id), \
-    f.lens, f.focal_length";
+    f.lens, f.focal_length, f.rating";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTag {
@@ -114,6 +118,7 @@ impl Db {
                 description TEXT NOT NULL DEFAULT '',
                 embedding BLOB,
                 ai_processed INTEGER NOT NULL DEFAULT 0,
+                rating INTEGER,
                 FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id);
@@ -193,6 +198,9 @@ impl Db {
         }
         if !filecols.iter().any(|c| c == "exif_checked") {
             conn.execute_batch("ALTER TABLE files ADD COLUMN exif_checked INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !filecols.iter().any(|c| c == "rating") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN rating INTEGER;")?;
         }
         // idx_files_ai needs the column to exist, so it is created after migrate.
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_files_ai ON files(ai_processed);")?;
@@ -726,6 +734,27 @@ impl Db {
         Ok(())
     }
 
+    /// Set a file's star rating (C-17). 0 or negative clears it (rating=NULL);
+    /// the frontend caps input to 1-5. The rating survives rescans (upsert_file
+    /// never touches this column — only content CHANGES reset AI state).
+    pub fn set_rating(&self, file_id: i64, rating: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        if rating <= 0 {
+            conn.execute(
+                "UPDATE files SET rating = NULL WHERE id=?1",
+                params![file_id],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            conn.execute(
+                "UPDATE files SET rating=?1 WHERE id=?2",
+                params![rating, file_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
     /// Upsert a scanned file. Returns the file id. Resets ai_processed on
     /// insert or content change so the AI queue re-processes it.
     pub fn upsert_file(
@@ -1105,6 +1134,7 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
     let colors_raw: Option<String> = row.get(10)?;
     let lens: Option<String> = row.get(11)?;
     let focal_length: Option<f64> = row.get(12)?;
+    let rating: Option<i64> = row.get(13)?;
     let tags: Vec<String> = tags_raw
         .map(|s| s.split(',').map(|t| t.to_string()).collect())
         .unwrap_or_default();
@@ -1126,6 +1156,7 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
         colors,
         lens,
         focal_length,
+        rating,
     })
 }
 // Unit tests: path normalization, DB migration, scanner, tag search (ADD.md §11).
@@ -1415,6 +1446,33 @@ mod tests {
         let (_dir, db) = tmp_db();
         db.set_setting("k", "v").unwrap();
         assert_eq!(db.get_setting("k").unwrap(), Some("v".to_string()));
+    }
+
+    #[test]
+    fn rating_roundtrip() {
+        let (_dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let id = db.get_photos(Some(fid)).unwrap()[0].id;
+
+        // Unrated by default.
+        assert_eq!(db.get_file_by_id(id).unwrap().unwrap().rating, None);
+        // Set 1-5 and read back.
+        for r in 1..=5 {
+            db.set_rating(id, r).unwrap();
+            assert_eq!(db.get_file_by_id(id).unwrap().unwrap().rating, Some(r));
+        }
+        // Clear (0 / negative).
+        db.set_rating(id, 0).unwrap();
+        assert_eq!(db.get_file_by_id(id).unwrap().unwrap().rating, None);
+        // A rescan (upsert with the same content) must NOT wipe the rating.
+        db.set_rating(id, 4).unwrap();
+        let display = folder.path().join("a.jpg").to_string_lossy().to_string();
+        let key = crate::utils::normalize_storage_path(&display);
+        db.upsert_file(fid, &key, &display, "a.jpg", 1, 1).unwrap();
+        assert_eq!(db.get_file_by_id(id).unwrap().unwrap().rating, Some(4));
     }
 }
 

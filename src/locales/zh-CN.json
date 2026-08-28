@@ -44,6 +44,13 @@
     "filterFocalMin": "最小 mm",
     "filterFocalMax": "最大 mm",
     "filterEmpty": "没有符合筛选条件的照片",
+    "ratingFilter": "按评分筛选",
+    "ratingAll": "全部",
+    "rating1": "≥ 1 星",
+    "rating2": "≥ 2 星",
+    "rating3": "≥ 3 星",
+    "rating4": "≥ 4 星",
+    "rating5": "≥ 5 星",
     "status": {
       "count": "{count} 张照片",
       "partial": "{shown} / {total} 张照片"
@@ -78,6 +85,10 @@
       "placeholder": "输入新标签名称后按回车",
       "save": "保存",
       "cancel": "取消"
+    },
+    "rating": {
+      "title": "评分：点击星星打分，再次点击当前分值可取消",
+      "star": "打 {n} 星"
     }
   },
   "menu": {

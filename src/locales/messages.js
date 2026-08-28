@@ -47,6 +47,13 @@ export const MESSAGES = {
       "filterFocalMin": "最小 mm",
       "filterFocalMax": "最大 mm",
       "filterEmpty": "没有符合筛选条件的照片",
+      "ratingFilter": "按评分筛选",
+      "ratingAll": "全部",
+      "rating1": "≥ 1 星",
+      "rating2": "≥ 2 星",
+      "rating3": "≥ 3 星",
+      "rating4": "≥ 4 星",
+      "rating5": "≥ 5 星",
       "status": {
         "count": "{count} 张照片",
         "partial": "{shown} / {total} 张照片"
@@ -81,6 +88,10 @@ export const MESSAGES = {
         "placeholder": "输入新标签名称后按回车",
         "save": "保存",
         "cancel": "取消"
+      },
+      "rating": {
+        "title": "评分：点击星星打分，再次点击当前分值可取消",
+        "star": "打 {n} 星"
       }
     },
     "menu": {
@@ -203,6 +214,13 @@ export const MESSAGES = {
       "filterFocalMin": "Min mm",
       "filterFocalMax": "Max mm",
       "filterEmpty": "No photos match the filters",
+      "ratingFilter": "Filter by rating",
+      "ratingAll": "All",
+      "rating1": "1+ star",
+      "rating2": "2+ stars",
+      "rating3": "3+ stars",
+      "rating4": "4+ stars",
+      "rating5": "5 stars",
       "status": {
         "count": "{count} photos",
         "partial": "{shown} / {total} photos"
@@ -237,6 +255,10 @@ export const MESSAGES = {
         "placeholder": "Type a new tag name and press Enter",
         "save": "Save",
         "cancel": "Cancel"
+      },
+      "rating": {
+        "title": "Rating: click a star to rate, click the current value again to clear",
+        "star": "Rate {n} star(s)"
       }
     },
     "menu": {

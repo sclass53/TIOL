@@ -21,6 +21,10 @@ src-tauri/resources/
 dev-log.txt
 npm-trace.txt
 
+# Tauri build.rs generates per-platform schema — macOS one is machine-local
+# (other platform schemas stay tracked)
+src-tauri/gen/schemas/macOS-schema.json
+
 # Test fixtures (local only)
 test_imgs/
 

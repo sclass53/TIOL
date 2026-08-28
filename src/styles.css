@@ -329,7 +329,7 @@ html, body {
 
 .card {
   width: 180px;
-  height: 180px;
+  height: 184px; /* 132px thumb + 18px star row + 34px meta (C-17) */
   background: var(--bg-surface);
   border: 1px solid var(--bg-elevated);
   border-radius: var(--radius);
@@ -338,7 +338,7 @@ html, body {
   flex-direction: column;
   /* Offscreen cards skip layout/paint (WebView2/Chromium) — big win for large grids */
   content-visibility: auto;
-  contain-intrinsic-size: 180px 180px;
+  contain-intrinsic-size: 180px 184px;
 }
 
 .card:hover { border-color: var(--accent); }
@@ -430,13 +430,12 @@ html, body {
 }
 
 .card__meta {
-  height: 44px;
-  padding: 4px 8px;
+  height: 34px;
+  padding: 2px 8px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  border-top: 1px solid var(--bg-elevated);
   font-size: 12px;
   color: var(--text-secondary);
   min-width: 0;
@@ -479,6 +478,37 @@ html, body {
   text-overflow: ellipsis;
   color: var(--text-secondary);
   min-width: 0;
+}
+
+/* Star rating row (C-17): below the thumbnail. Unrated stars are a thin
+   white outline (text-stroke), rated stars a solid yellow fill. */
+.card__stars {
+  height: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--bg-elevated);
+}
+.card__star {
+  font-size: 15px;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+.card__star:hover {
+  transform: scale(1.25);
+}
+/* Filled state (persisted rating) + hover preview state share the fill. */
+.card__star--on,
+.card__star--hover {
+  color: #ffcc00;
+  -webkit-text-stroke: 0;
 }
 
 /* Folder view toolbar */
