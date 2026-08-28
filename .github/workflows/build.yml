@@ -219,7 +219,10 @@ jobs:
           # Windows: SHA256 of tiol.exe inside the portable zip.
           WIN_SHA=$(unzip -p ../artifacts/windows/TIOL-win64-portable.zip tiol.exe 2>/dev/null | sha256sum | cut -d' ' -f1)
           # macOS: SHA256 of the .app executable (NOT the embedded dylib).
-          APP=$(ls -d ../artifacts/macos/*.app 2>/dev/null | head -1)
+          # The .app is a DIRECTORY inside the uploaded artifact and keeps
+          # its nested path (src-tauri/target/release/bundle/macos/*.app),
+          # so find instead of a top-level glob (C-18.1).
+          APP=$(find ../artifacts/macos -type d -name "*.app" 2>/dev/null | head -1)
           MAC_SHA=""
           if [ -n "$APP" ]; then
             EXE=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f ! -name "*.dylib" 2>/dev/null | head -1)
