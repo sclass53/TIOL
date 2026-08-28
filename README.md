@@ -14,17 +14,18 @@ All photos stay on your own hard drive. AI inference runs completely offline. No
 
 ## Features
 
-- 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML, and many more
+- 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML，etc.
+- 📷 **Lens/Focal length filtering**: Filter the photos through specifying the lens/the focal length.
 - 📁 **Directory Management**: Add/remove photo directories, file system monitoring (new/modified files are automatically queued for processing)
-- 🔍 **Dual‑path Search**: **Semantic search** (describe what you're looking for, e.g., *"a cup of coffee"*) + **Tag search** (millisecond SQL)
-- 🏷️ **Custom Labels**: AI tagging – enter any labels (Chinese or English) in the Tags tab; files are indexed automatically on changes, tagging runs on demand via the “AI Tagging” button
+- 🔍 **Dual‑path Search**: **Semantic search** (describe what you're looking for, e.g., *"a cup of coffee"*) + **Tag search** (fast)
+- 🏷️ **Custom Labels**: AI tagging – enter any labels (Chinese or English) in the Tags tab; files are indexed automatically on changes.
 - 🖥️ **AI Engine Options**: auto / GPU / CPU / Apple CoreML (macOS native Neural Engine acceleration) – fully local
 - 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
-- 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML, and many more
 
 ## Installation
 
 [Compiled Installers & Portable editions](https://github.com/sclass53/TIOL/releases)
+[Official Website (With Compiled Releases)](https://tiol.netlify.app)
 
 ## Quick Start
 
