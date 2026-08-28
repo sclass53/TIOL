@@ -162,10 +162,34 @@ function switchView(name) {
   } else if (isRejects) {
     currentGrid = rejectGrid;
   }
+  // Shared filters (colors/lens/focal/rating) are page-specific: switching
+  // between Photos and Rejects clears them so one page's conditions never
+  // leak into the other (C-19.9).
+  if ((isPhotos && lastGridView === "rejects") || (isRejects && lastGridView === "photos")) {
+    clearSharedFilters();
+  }
+  if (isPhotos || isRejects) lastGridView = isPhotos ? "photos" : "rejects";
   // Leaving a photo grid exits multi-select mode (C-13/C-19).
   if (!isPhotos && !isRejects && selectMode) setSelectMode(false);
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos || isRejects) requestAnimationFrame(fillGridIfNeeded);
+}
+let lastGridView = "photos";
+
+/// Reset the SHARED filter state (colors / lens / focal / rating) — used
+/// when switching between the Photos and Rejects pages (C-19.9).
+function clearSharedFilters() {
+  activeColorFilters.clear();
+  activeLensFilters.clear();
+  focalMin = null;
+  focalMax = null;
+  minRating = 0;
+  filterFocalMin.value = "";
+  filterFocalMax.value = "";
+  ratingFilterEl.value = "0";
+  els.ratingFilterRejects.value = "0";
+  renderFilterDots();
+  updateFilterButton();
 }
 // --- Theme (dark / light) — persisted in localStorage, no backend needed ---
 const THEME_KEY = "tiol-theme";
@@ -297,10 +321,13 @@ function confirmDialog(message, onOk) {
   els.confirmText.textContent = message;
   confirmCallback = onOk;
   els.confirmOverlay.hidden = false;
+  // The confirm dialog must not overlap the selection bar either (C-19.9).
+  setSelectionBarVisible(false);
 }
 function closeConfirmDialog() {
   confirmCallback = null;
   els.confirmOverlay.hidden = true;
+  setSelectionBarVisible(true);
 }
 els.confirmOk.addEventListener("click", () => {
   const cb = confirmCallback;
@@ -734,6 +761,12 @@ function updateSelectionBar() {
   els.btnSelectionRate.disabled = n === 0;
 }
 
+/// Dialogs (add-tag / rate / confirm) must never overlap the floating
+/// selection bar — hide it while any of them is open (C-19.9).
+function setSelectionBarVisible(visible) {
+  els.selectionBar.hidden = !(visible && selectMode);
+}
+
 function toggleSelect(photo) {
   if (selectedIds.has(photo.id)) selectedIds.delete(photo.id);
   else selectedIds.add(photo.id);
@@ -908,6 +941,7 @@ function renderTagPickList() {
     btn.addEventListener("click", async () => {
       const ids = [...selectedIds];
       els.tagpickOverlay.hidden = true;
+      setSelectionBarVisible(true);
       try {
         await invoke("add_tags_to_files", { fileIds: ids, tags: [n] });
         showSelectionHint(t("photos.tagsAdded", { count: ids.length, tag: n }));
@@ -935,15 +969,20 @@ els.btnSelectionTag.addEventListener("click", async () => {
     alert(String(e));
     return;
   }
+  setSelectionBarVisible(false);
   tagpickSearch.value = "";
   renderTagPickList();
   els.tagpickOverlay.hidden = false;
 });
 els.tagpickCancel.addEventListener("click", () => {
   els.tagpickOverlay.hidden = true;
+  setSelectionBarVisible(true);
 });
 els.tagpickOverlay.addEventListener("click", (e) => {
-  if (e.target === els.tagpickOverlay) els.tagpickOverlay.hidden = true;
+  if (e.target === els.tagpickOverlay) {
+    els.tagpickOverlay.hidden = true;
+    setSelectionBarVisible(true);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2160,6 +2199,7 @@ document.addEventListener("click", (e) => {
 // Multi-select "Rate" (C-19): pick 1-5 stars, apply to ALL selected photos.
 els.btnSelectionRate.addEventListener("click", () => {
   if (!selectedIds.size) return;
+  setSelectionBarVisible(false);
   renderRatePicker();
   els.rateOverlay.hidden = false;
 });
@@ -2177,6 +2217,7 @@ function renderRatePicker() {
     btn.addEventListener("click", async () => {
       const ids = [...selectedIds];
       els.rateOverlay.hidden = true;
+      setSelectionBarVisible(true);
       try {
         await invoke("set_rating_files", { fileIds: ids, rating: n });
         showSelectionHint(t("photos.rated", { count: ids.length, rating: n }));
@@ -2199,9 +2240,13 @@ function renderRatePicker() {
 }
 els.rateCancel.addEventListener("click", () => {
   els.rateOverlay.hidden = true;
+  setSelectionBarVisible(true);
 });
 els.rateOverlay.addEventListener("click", (e) => {
-  if (e.target === els.rateOverlay) els.rateOverlay.hidden = true;
+  if (e.target === els.rateOverlay) {
+    els.rateOverlay.hidden = true;
+    setSelectionBarVisible(true);
+  }
 });
 els.btnSelectModeRejects.addEventListener("click", () => setSelectMode(!selectMode));
 
