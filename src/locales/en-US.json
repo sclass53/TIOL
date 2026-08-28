@@ -42,7 +42,7 @@
     "tagsDeleted": "{count} photos cleared",
     "rateSelected": "Rate",
     "rateTitle": "Apply star rating",
-    "rated": "{count} photos rated {rating}★",
+    "rated": "{count} photos rated",
     "filterColor": "Color filter",
     "filterBtn": "Filter",
     "filterClear": "Clear",
@@ -124,6 +124,13 @@
     "clear": "Clear",
     "analyzing": "Analyzing Parameters… {done}/{total}",
     "analyzingTitle": "Analyzing Parameters"
+  },
+  "onboarding": {
+    "s1": "Click the arrow at the bottom-left to expand or collapse the menu",
+    "s2": "Click the folder icon to add your photo folders",
+    "next": "Next",
+    "done": "Done",
+    "skip": "Skip"
   },
   "update": {
     "label": "Updates",

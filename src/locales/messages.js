@@ -45,7 +45,7 @@ export const MESSAGES = {
       "tagsDeleted": "已清除 {count} 张照片",
       "rateSelected": "评分",
       "rateTitle": "应用星数",
-      "rated": "已为 {count} 张照片设置 {rating} 星",
+      "rated": "已为 {count} 张评分",
       "filterColor": "颜色筛选",
       "filterBtn": "筛选",
       "filterClear": "清除",
@@ -127,6 +127,13 @@ export const MESSAGES = {
       "clear": "清除",
       "analyzing": "分析曝光… {done}/{total}",
       "analyzingTitle": "分析曝光"
+    },
+    "onboarding": {
+      "s1": "点击左下角箭头可展开或收起菜单",
+      "s2": "点击文件夹图标添加你的照片文件夹",
+      "next": "下一步",
+      "done": "完成",
+      "skip": "跳过"
     },
     "update": {
       "label": "更新",
@@ -239,7 +246,7 @@ export const MESSAGES = {
       "tagsDeleted": "{count} photos cleared",
       "rateSelected": "Rate",
       "rateTitle": "Apply star rating",
-      "rated": "{count} photos rated {rating}★",
+      "rated": "{count} photos rated",
       "filterColor": "Color filter",
       "filterBtn": "Filter",
       "filterClear": "Clear",
@@ -321,6 +328,13 @@ export const MESSAGES = {
       "clear": "Clear",
       "analyzing": "Analyzing Parameters… {done}/{total}",
       "analyzingTitle": "Analyzing Parameters"
+    },
+    "onboarding": {
+      "s1": "Click the arrow at the bottom-left to expand or collapse the menu",
+      "s2": "Click the folder icon to add your photo folders",
+      "next": "Next",
+      "done": "Done",
+      "skip": "Skip"
     },
     "update": {
       "label": "Updates",

@@ -5,9 +5,12 @@
 //!
 //! Exposure rules (user-specified):
 //! - Overexposed: pixels with luma 252-255 cover > 20% of the area.
-//! - Underexposed: luma < 20 covers > 30% AND the brightest pixel < 150.
+//! - Underexposed: luma < 20 covers > 20% AND the brightest pixel < 160.
 //! Never fails: unreadable images count as neither (so they don't get
 //! re-analyzed on every run).
+//!
+//! When these rules change, bump EXPOSURE_RULE_VERSION in main.rs — the
+//! startup check then resets the cached metrics so the library re-analyzes.
 
 use std::path::Path;
 
@@ -61,7 +64,7 @@ pub fn analyze_exposure(path: &Path) -> (bool, bool) {
     }
     let over_ratio = over as f32 / total;
     let under_ratio = under as f32 / total;
-    (over_ratio > 0.20, under_ratio > 0.30 && max_l < 150)
+    (over_ratio > 0.20, under_ratio > 0.20 && max_l < 160)
 }
 
 #[cfg(test)]
@@ -103,16 +106,15 @@ mod tests {
 
     #[test]
     fn dark_with_bright_spots_is_not_underexposed() {
-        // ~90% black, ~10% white → under-ratio 0.9 > 0.3 BUT max luma 255
-        // (>= 150), so NOT underexposed; the white strip is 10% < 20%,
-        // so NOT overexposed either (a wide strip would be blurred grey by
-        // the downscale and unreliable — keep the area clearly below 20%).
+        // ~91% black, ~9% white → under-ratio 0.91 > 0.3 BUT max luma 255
+        // (>= 150), so NOT underexposed; the white strip is 9.4% < the
+        // 10% overexposure threshold, so NOT overexposed either.
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("mixed.jpg");
         let mut img = image::RgbImage::new(64, 64);
         for y in 0..64 {
             for x in 0..64 {
-                let px = if x >= 57 { [255, 255, 255] } else { [0, 0, 0] };
+                let px = if x >= 58 { [255, 255, 255] } else { [0, 0, 0] };
                 img.put_pixel(x, y, image::Rgb(px));
             }
         }
@@ -120,5 +122,45 @@ mod tests {
         let (over, under) = analyze_exposure(&p);
         assert!(!over);
         assert!(!under);
+    }
+
+    #[test]
+    fn thirty_percent_bright_area_is_overexposed() {
+        // ~69% black, ~31% white → over (well above the 20% threshold);
+        // under fails because the brightest pixel is 255 (>= 140).
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("mixed2.jpg");
+        let mut img = image::RgbImage::new(64, 64);
+        for y in 0..64 {
+            for x in 0..64 {
+                let px = if x >= 44 { [255, 255, 255] } else { [0, 0, 0] };
+                img.put_pixel(x, y, image::Rgb(px));
+            }
+        }
+        img.save(&p).unwrap();
+        let (over, under) = analyze_exposure(&p);
+        assert!(over);
+        assert!(!under);
+    }
+
+    #[test]
+    fn dark_with_dim_highlights_is_underexposed() {
+        // ~80% black + ~20% dim gray (luma 150 — between the old 140 and the
+        // current 160 limit, so this test pins the <160 rule): under-ratio
+        // 0.8 > 0.2 AND the brightest pixel is 150 < 160 → underexposed;
+        // nothing >= 252 → not overexposed.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("dim.jpg");
+        let mut img = image::RgbImage::new(64, 64);
+        for y in 0..64 {
+            for x in 0..64 {
+                let px = if x >= 51 { [150, 150, 150] } else { [0, 0, 0] };
+                img.put_pixel(x, y, image::Rgb(px));
+            }
+        }
+        img.save(&p).unwrap();
+        let (over, under) = analyze_exposure(&p);
+        assert!(!over);
+        assert!(under);
     }
 }

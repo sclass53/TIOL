@@ -70,7 +70,6 @@ const els = {
   btnSelectMode: document.getElementById("btn-select-mode"),
   selectionBar: document.getElementById("selection-bar"),
   selectionCount: document.getElementById("selection-count"),
-  selectionHint: document.getElementById("selection-hint"),
   btnSelectionTag: document.getElementById("btn-selection-tag"),
   btnSelectionRate: document.getElementById("btn-selection-rate"),
   btnSelectionClearTags: document.getElementById("btn-selection-clear-tags"),
@@ -194,6 +193,7 @@ els.themeOptions.addEventListener("click", (ev) => {
 });
 els.navPhotos.addEventListener("click", () => {
   switchView("photos");
+  onboardingOnPhotosClicked();
   // Re-fetch so cards show freshly computed tags (stale-tag fix).
   if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
     loadPhotos();
@@ -714,7 +714,6 @@ function setSelectMode(on) {
   els.selectionBar.hidden = !on;
   if (!on) {
     selectedIds.clear();
-    hideSelectionHint();
   }
   // Update already-rendered cards in place (no re-render: keeps scroll pos).
   for (const card of currentGrid.children) {
@@ -744,15 +743,16 @@ function toggleSelect(photo) {
   updateSelectionBar();
 }
 
+// Selection-action feedback (C-19.6): shown as a popup ABOVE the bottom
+// selection bar — never inside it, so long texts can't squeeze the buttons.
 let selectionHintTimer = null;
 function showSelectionHint(text) {
-  els.selectionHint.textContent = text;
-  els.selectionHint.hidden = false;
+  const el = document.createElement("div");
+  el.className = "toast selection-toast";
+  el.textContent = text;
+  document.body.appendChild(el);
   clearTimeout(selectionHintTimer);
-  selectionHintTimer = setTimeout(hideSelectionHint, 2500);
-}
-function hideSelectionHint() {
-  els.selectionHint.hidden = true;
+  selectionHintTimer = setTimeout(() => el.remove(), 2500);
 }
 
 els.btnSelectMode.addEventListener("click", () => setSelectMode(!selectMode));
@@ -1664,6 +1664,9 @@ async function loadPhotos(folderId = null) {
     const photos = await invoke("get_photos", { folderId });
     allPhotos = photos;
     renderPhotos(applyFilters(photos));
+    // Fill the viewport beyond the initial chunk — startup renders only the
+    // first screenful and nothing triggers the fill loop otherwise (C-19.7).
+    requestAnimationFrame(fillGridIfNeeded);
   } catch (e) {
     console.error(e);
   }
@@ -1977,6 +1980,7 @@ async function loadRejects() {
     renderPhotos(shown);
     currentGrid = wasGrid;
     renderRejectStatus(shown.length);
+    requestAnimationFrame(fillGridIfNeeded);
   } catch (e) {
     console.error(e);
   }
@@ -2061,10 +2065,15 @@ function applyRejectConds(photos) {
   });
 }
 
-// Run the (incremental) analysis — called on startup warmup AND on every
-// entry to the rejects page; the backend dedupes concurrent runs and only
-// processes files whose metrics are still NULL, so repeated calls are cheap.
+// Run the (incremental) analysis — triggered once at startup AND once on
+// the first entry to the rejects page, then only again after a rescan
+// (new files). The backend dedupes concurrent runs and completes the whole
+// library in one pass, so repeated page entries must NOT re-trigger it
+// (C-19.6 — the "multiple analysis passes" complaint).
+let rejectAnalysisTriggered = false;
 async function ensureRejectAnalysis() {
+  if (rejectAnalysisTriggered) return;
+  rejectAnalysisTriggered = true;
   try {
     await invoke("compute_reject_metrics");
   } catch (e) {
@@ -2108,13 +2117,12 @@ function renderRejectConds() {
         "searchbar__filter--active",
         activeRejectConds.size > 0
       );
-      // Re-filter now, and make sure the metrics exist for the checked
-      // conditions (eyes/exposure; blur has none yet).
+      // Re-filter ONLY — toggling conditions must never re-trigger the
+      // analysis (it runs once at startup / on entering the page).
       if (els.viewRejects.classList.contains("view--hidden")) {
         renderPhotos(applyFilters(allPhotos));
       } else {
         loadRejects();
-        ensureRejectAnalysis();
       }
     });
     const span = document.createElement("span");
@@ -2160,7 +2168,9 @@ function renderRatePicker() {
   els.ratePicker.textContent = "";
   for (let n = 1; n <= 5; n++) {
     const btn = document.createElement("button");
-    btn.className = "rate-picker__star" + (n <= 5 ? " rate-picker__star--fill" : "");
+    // All stars start UNSELECTED (dark) — clicking star N applies N and
+    // closes the dialog; there is no preselection state (C-19.6).
+    btn.className = "rate-picker__star";
     btn.textContent = "★";
     btn.title = t("card.rating.star", { n });
     btn.dataset.rating = String(n);
@@ -2170,12 +2180,15 @@ function renderRatePicker() {
       try {
         await invoke("set_rating_files", { fileIds: ids, rating: n });
         showSelectionHint(t("photos.rated", { count: ids.length, rating: n }));
-        // Update the visible cards in place (keeps scroll position).
+        // Force a re-render of the current grid: the in-place star refresh
+        // proved unreliable, and the fresh cards read p.rating directly.
         for (const p of currentPhotos) {
-          if (!selectedIds.has(p.id)) continue;
-          p.rating = n;
-          const stars = p._card && p._card.querySelector(".card__stars");
-          if (stars) renderCardStars(stars, n);
+          if (selectedIds.has(p.id)) p.rating = n;
+        }
+        if (els.viewRejects.classList.contains("view--hidden")) {
+          renderPhotos(applyFilters(allPhotos));
+        } else {
+          renderPhotos(applyRejectConds(applyFilters(allRejects)));
         }
       } catch (e) {
         alert(String(e));
@@ -2203,6 +2216,7 @@ els.btnAdd.addEventListener("click", async () => {
     // add_folder now returns after the scan completes, so counts and the
     // photo list are final — no setTimeout polling needed.
     await invoke("add_folder", { path });
+    onboardingAfterAdd();
     markFoldersDirty();
     await loadFolders();
     await loadPhotos();
@@ -2231,6 +2245,8 @@ els.btnRefresh.addEventListener("click", async () => {
 // re-fetches it next time it opens; C-15.4).
 listen("scan-complete", () => {
   lensCache = null;
+  // New/changed files may need reject metrics — allow one more analysis pass.
+  rejectAnalysisTriggered = false;
   markFoldersDirty();
   loadPhotos();
   loadRejects();
@@ -2298,14 +2314,129 @@ async function checkForUpdates(manual) {
   } catch (e) {
     // Offline / parse problems: stay silent unless the user asked manually.
     if (manual) toast(t("update.offline"));
+    return false;
   }
+  return true;
 }
 
 btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
 
+// ---------------------------------------------------------------------------
+// First-run onboarding (C-19.7/C-19.8): step-by-step highlight tour shown
+// ONCE per install (DB flag "onboarding_done"). Kept short — the steps after
+// "add a folder" were removed (C-19.8): ① collapse arrow ② folder icon.
+// ---------------------------------------------------------------------------
+let onboardingActive = false;
+let onboardingStep = 0;
+const ONBOARD_STEPS = [
+  { target: "#sidebar-toggle", key: "onboarding.s1", mode: "next" },
+  { target: "#nav-folders", key: "onboarding.s2", mode: "finish" },
+];
+
+function onboardingShow() {
+  if (onboardingActive) return;
+  onboardingActive = true;
+  onboardingStep = 0;
+  renderOnboarding();
+}
+
+function onboardingHide() {
+  onboardingActive = false;
+  const root = document.getElementById("onboarding-root");
+  if (root) root.remove();
+  // One-time flag: never show again on this install.
+  invoke("set_setting", { key: "onboarding_done", value: "1" }).catch(() => {});
+}
+
+function onboardingAdvance() {
+  onboardingStep++;
+  if (onboardingStep >= ONBOARD_STEPS.length) {
+    onboardingHide();
+  } else {
+    renderOnboarding();
+  }
+}
+
+function renderOnboarding() {
+  const old = document.getElementById("onboarding-root");
+  if (old) old.remove();
+  const step = ONBOARD_STEPS[onboardingStep];
+  const root = document.createElement("div");
+  root.id = "onboarding-root";
+
+  // Highlight box (pointer-events: none — the user still interacts).
+  const box = document.createElement("div");
+  box.className = "onboarding-box";
+  let anchor = null;
+  if (step.target) {
+    anchor = document.querySelector(step.target);
+  }
+  if (anchor) {
+    const r = anchor.getBoundingClientRect();
+    box.style.left = `${r.left - 4}px`;
+    box.style.top = `${r.top - 4}px`;
+    box.style.width = `${r.width + 8}px`;
+    box.style.height = `${r.height + 8}px`;
+  } else {
+    // Top-right "progress badge" area (step 5) — the badge may be hidden.
+    box.style.right = "10px";
+    box.style.top = "10px";
+    box.style.width = "240px";
+    box.style.height = "96px";
+  }
+  root.appendChild(box);
+
+  // Bubble (interactive).
+  const bubble = document.createElement("div");
+  bubble.className = "onboarding-bubble";
+  const text = document.createElement("div");
+  text.className = "onboarding-bubble__text";
+  text.textContent = t(step.key);
+  const actions = document.createElement("div");
+  actions.className = "onboarding-actions";
+  const skip = document.createElement("button");
+  skip.className = "btn btn--ghost";
+  skip.textContent = t("onboarding.skip");
+  skip.addEventListener("click", onboardingHide);
+  actions.appendChild(skip);
+  if (step.mode !== "wait-add" && step.mode !== "wait-photos") {
+    const next = document.createElement("button");
+    next.className = "btn btn--primary";
+    next.textContent = t(step.mode === "finish" ? "onboarding.done" : "onboarding.next");
+    next.addEventListener("click", onboardingAdvance);
+    actions.appendChild(next);
+  }
+  bubble.appendChild(text);
+  bubble.appendChild(actions);
+  root.appendChild(bubble);
+
+  // Position the bubble below the highlight; flip above when near bottom.
+  const boxRect = box.getBoundingClientRect();
+  bubble.style.left = `${Math.max(8, Math.min(boxRect.left, window.innerWidth - 340))}px`;
+  const below = boxRect.bottom + 12;
+  if (below + 130 < window.innerHeight) {
+    bubble.style.top = `${below}px`;
+  } else {
+    bubble.style.top = `${Math.max(8, boxRect.top - 130)}px`;
+  }
+  document.body.appendChild(root);
+}
+
+// Hook: add-folder succeeded while step 3 is waiting → advance to step 4.
+function onboardingAfterAdd() {
+  if (onboardingActive && ONBOARD_STEPS[onboardingStep].mode === "wait-add") {
+    onboardingAdvance();
+  }
+}
+// Hook: user clicked the Photos nav while step 4 is waiting → advance.
+function onboardingOnPhotosClicked() {
+  if (onboardingActive && ONBOARD_STEPS[onboardingStep].mode === "wait-photos") {
+    onboardingAdvance();
+  }
+}
+
 // Initial load
-(async () => {
-  try {
+(async () => {  try {
     await initI18n();
   } catch (e) {
     console.error(e);
@@ -2321,9 +2452,22 @@ btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
   loadPhotos();
   loadFolders();
   detectAndReportRenderer();
+  // First-run onboarding (C-19.7): show only when the flag is missing —
+  // the first release that ships the tour shows it to every install.
+  try {
+    const done = await invoke("get_setting", { key: "onboarding_done" });
+    if (done !== "1") setTimeout(onboardingShow, 900);
+  } catch (e) {
+    /* keep silent — tour is optional */
+  }
   // Startup update check (C-18): deferred so it never races first paint;
-  // dev builds short-circuit in the backend (debug_assertions).
-  setTimeout(() => checkForUpdates(false), 2000);
+  // dev builds short-circuit in the backend (debug_assertions). Retried once
+  // 30s later if the first attempt threw (transient network).
+  setTimeout(async () => {
+    if (!(await checkForUpdates(false))) {
+      setTimeout(() => checkForUpdates(false), 30000);
+    }
+  }, 2000);
   // Reject-metrics warmup (C-19.3): start exposure/eyes analysis in the
   // background right after startup so the rejects page is populated by the
   // time the user visits it (progress badge shows while it runs).

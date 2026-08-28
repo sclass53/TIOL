@@ -27,8 +27,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 /// Background thumbnail prewarm: after a scan, generate missing thumbnails
 /// with a small worker pool so browsing is instant even for large libraries.
-fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {
-    std::thread::spawn(move || {
+fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {    std::thread::spawn(move || {
         let cache = utils::cache_dir(&app_dir);
         let folders = match db.get_folders() {
             Ok(f) => f,
@@ -98,6 +97,37 @@ fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {
         }
         drop(tx);
         log::info!("thumb prewarm: finished queueing {queued} files");
+    });
+}
+
+/// Background EXIF backfill (C-15 / C-19.8): read lens/focal for every file
+/// still marked exif_checked=0 (new/changed files since the last pass; files
+/// without EXIF are marked checked too, so each file is read once). Runs in
+/// a background thread — NEVER on the scan path, so adding a folder stays
+/// fast. Called at startup and after every scan.
+fn spawn_exif_backfill(db: Arc<Db>) {
+    std::thread::spawn(move || {
+        let mut offset = 0i64;
+        loop {
+            let batch = match db.get_files_missing_exif(500, offset) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("exif backfill query failed: {e}");
+                    return;
+                }
+            };
+            if batch.is_empty() {
+                break;
+            }
+            for (id, path) in &batch {
+                let (lens, focal) = exif::read_lens_focal(std::path::Path::new(path));
+                if let Err(e) = db.update_exif(*id, lens.as_deref(), focal) {
+                    log::warn!("exif backfill update failed for {path}: {e}");
+                }
+            }
+            offset += batch.len() as i64;
+        }
+        log::info!("exif backfill complete");
     });
 }
 
@@ -229,6 +259,7 @@ async fn add_folder(
     .await
     .map_err(|e| e.to_string())?;
     spawn_thumb_prewarm(state.app_dir.clone(), state.db.clone());
+    spawn_exif_backfill(state.db.clone());
     rebuild_watcher(&state, app);
     Ok(id)
 }
@@ -395,13 +426,14 @@ async fn compute_reject_metrics(
     // Everything below in one async block so the running flag is ALWAYS
     // released, even when the eyes-closed step errors out early.
     let result: Result<(), String> = async {
-        // 1) Eyes-closed via stored embeddings (no image decode).
+        // 1) Eyes-closed via stored embeddings (no image decode) — INCREMENTAL:
+        //    only files whose eyes_closed is still NULL get checked (C-19.6).
         {
             let guard = state.ai_engine.lock().await;
             if let Some(eng) = guard.as_ref() {
                 let q = eng.embed_text("closed eyes").map_err(|e| e.to_string())?;
                 drop(guard);
-                let rows = state.db.get_embeddings().map_err(|e| e.to_string())?;
+                let rows = state.db.get_embeddings_missing_eyes().map_err(|e| e.to_string())?;
                 let mut closed = 0usize;
                 for (id, emb) in &rows {
                     let eyes = ai::engine::cosine(emb, &q) > 0.11;
@@ -422,6 +454,7 @@ async fn compute_reject_metrics(
             let cache = utils::cache_dir(&app_dir);
             let mut offset = 0i64;
             let mut done = 0i64;
+            let mut failed = 0usize;
             loop {
                 let batch = db.get_files_missing_exposure(50, offset).map_err(|e| e.to_string())?;
                 if batch.is_empty() {
@@ -429,10 +462,25 @@ async fn compute_reject_metrics(
                 }
                 for (id, path) in &batch {
                     // Thumbnail pixels are enough for exposure stats and are
-                    // far cheaper to decode than originals (C-19.4).
+                    // far cheaper to decode than originals (C-19.4). A single
+                    // bad file must NEVER abort the pass — catch panics and
+                    // record errors, mark it as "neither" and continue so one
+                    // run always completes the whole library (C-19.6).
                     let src = rejects::thumbnail_or_original(&cache, std::path::Path::new(path));
-                    let (over, under) = rejects::analyze_exposure(&src);
-                    db.update_reject_exposure(*id, over, under).map_err(|e| e.to_string())?;
+                    let verdict = std::panic::catch_unwind(|| {
+                        rejects::analyze_exposure(&src)
+                    });
+                    let (over, under) = match verdict {
+                        Ok(v) => v,
+                        Err(_) => {
+                            failed += 1;
+                            (false, false)
+                        }
+                    };
+                    if let Err(e) = db.update_reject_exposure(*id, over, under) {
+                        log::warn!("reject exposure update failed for {path}: {e}");
+                        failed += 1;
+                    }
                     done += 1;
                     if done % 20 == 0 || done == total {
                         let _ = handle.emit(
@@ -444,7 +492,10 @@ async fn compute_reject_metrics(
                 offset += batch.len() as i64;
             }
             let _ = handle.emit("reject-analysis-complete", serde_json::json!({}));
-            log::info!("reject metrics: exposure analyzed {done} files");
+            log::info!(
+                "reject metrics: exposure analyzed {done} files ({} failed, treated as normal)",
+                failed
+            );
             Ok(())
         })
         .await
@@ -544,6 +595,7 @@ fn scan_folders(
         }
     });
     spawn_thumb_prewarm(state.app_dir.clone(), state.db.clone());
+    spawn_exif_backfill(state.db.clone());
     rebuild_watcher(&state, app_handle);
     Ok(results)
 }
@@ -1143,6 +1195,17 @@ fn main() {
                     log::info!("cleaned {n} stray 'unknown' tags");
                 }
             }
+            // Reject-metrics rule-version gate (C-19.5): when the over/under
+            // exposure or eyes thresholds change, cached metrics become
+            // invalid — reset them once so the next pass recomputes.
+            const EXPOSURE_RULE_VERSION: &str = "over=0.20,under=0.20/160,eyes=0.11";
+            if db.get_setting("exposure_rule_version").ok().flatten().as_deref()
+                != Some(EXPOSURE_RULE_VERSION)
+            {
+                log::info!("reject rules changed — resetting cached metrics");
+                db.reset_reject_metrics()?;
+                db.set_setting("exposure_rule_version", EXPOSURE_RULE_VERSION)?;
+            }
 
             // ---- AI: model lock + download (ADD.md §4); engine loads after ----
             let model_dir = app
@@ -1355,36 +1418,7 @@ fn main() {
                     // (run_ai_tagging), which re-checks every file missing
                     // any current tag (new tags + new files included).
                     spawn_thumb_prewarm(prewarm_dir, db_clone);
-                    // EXIF backfill (C-15): read lens/focal for rows scanned
-                    // before the feature existed. Files without EXIF are
-                    // marked checked too, so this runs once.
-                    {
-                        let bdb = db2.clone();
-                        std::thread::spawn(move || {
-                            let mut offset = 0i64;
-                            loop {
-                                let batch = match bdb.get_files_missing_exif(500, offset) {
-                                    Ok(b) => b,
-                                    Err(e) => {
-                                        log::warn!("exif backfill query failed: {e}");
-                                        return;
-                                    }
-                                };
-                                if batch.is_empty() {
-                                    break;
-                                }
-                                for (id, path) in &batch {
-                                    let (lens, focal) =
-                                        exif::read_lens_focal(std::path::Path::new(path));
-                                    if let Err(e) = bdb.update_exif(*id, lens.as_deref(), focal) {
-                                        log::warn!("exif backfill update failed for {path}: {e}");
-                                    }
-                                }
-                                offset += batch.len() as i64;
-                            }
-                            log::info!("exif backfill complete");
-                        });
-                    }
+                    spawn_exif_backfill(db2.clone());
                 });
             }
             rebuild_watcher(&state, app.handle().clone());

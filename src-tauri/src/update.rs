@@ -81,32 +81,38 @@ pub fn evaluate_update(remote_json: &str, local_sha: &str, platform: &str) -> Up
 }
 
 /// The update-check command. Every failure mode resolves to "no update".
+/// Results are logged at info level so users can confirm the automatic
+/// startup check actually ran (C-19.6).
 pub async fn check_update() -> UpdateInfo {
     // Dev builds run from target/debug — their hash can never match a
     // release artifact, which would report "update available" forever.
     if cfg!(debug_assertions) {
+        log::info!("update check skipped (dev build)");
         return no_update();
     }
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            log::debug!("update: current_exe failed: {e}");
+            log::info!("update check failed: current_exe: {e}");
             return no_update();
         }
     };
     let local_sha = match sha256_hex(&exe) {
         Ok(s) => s,
         Err(e) => {
-            log::debug!("update: sha256 of {} failed: {e}", exe.display());
+            log::info!("update check failed: sha256 of {}: {e}", exe.display());
             return no_update();
         }
     };
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(8))
         .build()
     {
         Ok(c) => c,
-        Err(_) => return no_update(),
+        Err(e) => {
+            log::info!("update check failed: client: {e}");
+            return no_update();
+        }
     };
     let body = match client
         .get("https://tiol.netlify.app/version.json")
@@ -115,10 +121,13 @@ pub async fn check_update() -> UpdateInfo {
     {
         Ok(r) => match r.text().await {
             Ok(t) => t,
-            Err(_) => return no_update(),
+            Err(e) => {
+                log::info!("update check failed: read body: {e}");
+                return no_update();
+            }
         },
         Err(e) => {
-            log::debug!("update: fetch version.json failed: {e}");
+            log::info!("update check failed: fetch version.json: {e}");
             return no_update();
         }
     };
@@ -137,6 +146,10 @@ pub async fn check_update() -> UpdateInfo {
             info.local_sha,
             info.remote_sha.as_deref().unwrap_or("?")
         );
+    } else if info.remote_sha.is_some() {
+        log::info!("update check: up to date (v{})", info.version.as_deref().unwrap_or("?"));
+    } else {
+        log::info!("update check: no version.json data for this platform");
     }
     info
 }

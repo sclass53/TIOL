@@ -1040,6 +1040,17 @@ impl Db {
         Ok(())
     }
 
+    /// Invalidate the cached reject metrics (threshold/rule changes) —
+    /// sets exposure AND eyes back to NULL so the next pass recomputes.
+    pub fn reset_reject_metrics(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch(
+            "UPDATE files SET overexposed = NULL, underexposed = NULL, eyes_closed = NULL;",
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Remove EVERY tag (text tags of any source AND color labels) from the
     /// given files — the multi-select "delete tags" action (C-15.1).
     pub fn clear_all_tags_on_files(&self, ids: &[i64]) -> Result<usize, String> {
@@ -1072,6 +1083,31 @@ impl Db {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare("SELECT id, embedding FROM files WHERE ai_processed >= 2 AND embedding IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (id, bytes) = r.map_err(|e| e.to_string())?;
+            let vec: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            out.push((id, vec));
+        }
+        Ok(out)
+    }
+
+    /// (id, embedding) for files whose eyes-closed metric was never computed
+    /// (C-19.6: incremental — only new/changed files with embeddings).
+    pub fn get_embeddings_missing_eyes(&self) -> Result<Vec<(i64, Vec<f32>)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, embedding FROM files
+                 WHERE ai_processed >= 2 AND embedding IS NOT NULL AND eyes_closed IS NULL",
+            )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
@@ -1523,10 +1559,14 @@ mod tests {
         let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
         let id = db.get_photos(Some(fid)).unwrap()[0].id;
 
-        // The scanner already marked the file exif-checked (no EXIF found).
-        assert!(db.get_files_missing_exif(100, 0).unwrap().is_empty());
-        // Backfill-style update: explicit lens/focal wins.
+        // The scanner NO LONGER extracts EXIF (C-19.8 — it would slow folder
+        // scans); the file stays pending for the background backfill.
+        let missing = db.get_files_missing_exif(100, 0).unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].0, id);
+        // Backfill-style update: explicit lens/focal wins and marks checked.
         db.update_exif(id, Some("EF50mm f/1.8"), Some(50.0)).unwrap();
+        assert!(db.get_files_missing_exif(100, 0).unwrap().is_empty());
         let rec = db.get_file_by_id(id).unwrap().unwrap();
         assert_eq!(rec.lens.as_deref(), Some("EF50mm f/1.8"));
         assert_eq!(rec.focal_length, Some(50.0));

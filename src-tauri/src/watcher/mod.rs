@@ -93,6 +93,9 @@ impl FileWatcher {
                                 if queued > 0 {
                                     log::info!("watcher: enqueued {queued} changed files for AI");
                                 }
+                                // EXIF for the new/changed files, off the scan
+                                // path (C-19.8).
+                                crate::spawn_exif_backfill(db2.clone());
                                 // Let the frontend refresh lists/thumbnails.
                                 let _ = app.emit("scan-complete", Vec::<(i64, usize, usize)>::new());
                             }
