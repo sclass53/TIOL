@@ -436,7 +436,6 @@ html, body {
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  border-top: 1px solid var(--bg-elevated);
   font-size: 12px;
   color: var(--text-secondary);
   min-width: 0;
