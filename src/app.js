@@ -34,10 +34,12 @@ const els = {
   navPhotos: document.getElementById("nav-photos"),
   navFolders: document.getElementById("nav-folders"),
   navTags: document.getElementById("nav-tags"),
+  navRejects: document.getElementById("nav-rejects"),
   navSettings: document.getElementById("nav-settings"),
   viewPhotos: document.getElementById("view-photos"),
   viewFolders: document.getElementById("view-folders"),
   viewTags: document.getElementById("view-tags"),
+  viewRejects: document.getElementById("view-rejects"),
   viewSettings: document.getElementById("view-settings"),
   langOptions: document.getElementById("lang-options"),
   themeOptions: document.getElementById("theme-options"),
@@ -70,6 +72,7 @@ const els = {
   selectionCount: document.getElementById("selection-count"),
   selectionHint: document.getElementById("selection-hint"),
   btnSelectionTag: document.getElementById("btn-selection-tag"),
+  btnSelectionRate: document.getElementById("btn-selection-rate"),
   btnSelectionClearTags: document.getElementById("btn-selection-clear-tags"),
   btnSelectionCancel: document.getElementById("btn-selection-cancel"),
   tagpickOverlay: document.getElementById("tagpick-overlay"),
@@ -79,6 +82,19 @@ const els = {
   editSuggest: document.getElementById("edit-suggest"),
   photoGrid: document.getElementById("photo-grid"),
   photoStatus: document.getElementById("photo-status"),
+  rejectGrid: document.getElementById("reject-grid"),
+  rejectStatus: document.getElementById("reject-status"),
+  rejectSearchInput: document.getElementById("reject-search-input"),
+  ratingFilterRejects: document.getElementById("rating-filter-rejects"),
+  btnSelectModeRejects: document.getElementById("btn-select-mode-rejects"),
+  btnColorFilterRejects: document.getElementById("btn-color-filter-rejects"),
+  btnRejectCond: document.getElementById("btn-reject-cond"),
+  rejectCondPanel: document.getElementById("reject-cond-panel"),
+  rejectCondItems: document.getElementById("reject-cond-items"),
+  btnRejectCondClear: document.getElementById("btn-reject-cond-clear"),
+  rateOverlay: document.getElementById("rate-overlay"),
+  ratePicker: document.getElementById("rate-picker"),
+  rateCancel: document.getElementById("rate-cancel"),
   folderList: document.getElementById("folder-list"),
   folderStatus: document.getElementById("folder-status"),
   btnAdd: document.getElementById("btn-add-folder"),
@@ -91,23 +107,66 @@ const els = {
 let currentPhotos = [];
 let renderedCount = 0;
 const CHUNK_APPEND = 100; // cards appended per scroll fill
+// The photo grid being rendered right now (photos view or rejects view,
+// C-19) — every grid operation below targets this element.
+let currentGrid = els.photoGrid;
+const rejectGrid = els.rejectGrid;
+
+// --- collapsible sidebar (C-19.2): labels + width animate; expanded by
+// default, state persisted in localStorage ---
+const sidebarEl = document.getElementById("sidebar");
+const sidebarToggle = document.getElementById("sidebar-toggle");
+const SIDEBAR_KEY = "tiol-sidebar";
+
+function applySidebar(open) {
+  sidebarEl.classList.toggle("sidebar--open", open);
+  sidebarToggle.textContent = open ? "◀" : "▶";
+  sidebarToggle.title = t(open ? "sidebar.collapse" : "sidebar.expand");
+  try {
+    localStorage.setItem(SIDEBAR_KEY, open ? "1" : "0");
+  } catch (e) {
+    /* non-fatal */
+  }
+}
+sidebarToggle.addEventListener("click", () => {
+  applySidebar(!sidebarEl.classList.contains("sidebar--open"));
+});
+{
+  let saved = "1"; // expanded by default
+  try {
+    saved = localStorage.getItem(SIDEBAR_KEY) || "1";
+  } catch (e) {
+    /* non-fatal */
+  }
+  applySidebar(saved !== "0");
+}
 
 function switchView(name) {
   const isPhotos = name === "photos";
   const isFolders = name === "folders";
   const isTags = name === "tags";
+  const isRejects = name === "rejects";
   els.viewPhotos.classList.toggle("view--hidden", !isPhotos);
   els.viewFolders.classList.toggle("view--hidden", !isFolders);
   els.viewTags.classList.toggle("view--hidden", !isTags);
+  els.viewRejects.classList.toggle("view--hidden", !isRejects);
   els.viewSettings.classList.toggle("view--hidden", name !== "settings");
   els.navPhotos.classList.toggle("sidebar__btn--active", isPhotos);
   els.navFolders.classList.toggle("sidebar__btn--active", isFolders);
   els.navTags.classList.toggle("sidebar__btn--active", isTags);
+  els.navRejects.classList.toggle("sidebar__btn--active", isRejects);
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
-  // Leaving the photos view exits multi-select mode (C-13).
-  if (!isPhotos && selectMode) setSelectMode(false);
+  // Photo grids: switch the target of all grid operations (C-19).
+  if (isPhotos) {
+    currentGrid = els.photoGrid;
+    els.photoStatus.classList.remove("view--hidden");
+  } else if (isRejects) {
+    currentGrid = rejectGrid;
+  }
+  // Leaving a photo grid exits multi-select mode (C-13/C-19).
+  if (!isPhotos && !isRejects && selectMode) setSelectMode(false);
   // Defer to next frame so the unhidden view has settled before measuring.
-  if (isPhotos) requestAnimationFrame(fillGridIfNeeded);
+  if (isPhotos || isRejects) requestAnimationFrame(fillGridIfNeeded);
 }
 // --- Theme (dark / light) — persisted in localStorage, no backend needed ---
 const THEME_KEY = "tiol-theme";
@@ -142,6 +201,14 @@ els.navPhotos.addEventListener("click", () => {
 });
 els.navFolders.addEventListener("click", () => { switchView("folders"); loadFolders(); });
 els.navTags.addEventListener("click", () => { switchView("tags"); renderTags(); });
+els.navRejects.addEventListener("click", () => {
+  switchView("rejects");
+  loadRejects();
+  // Re-render the condition labels in the CURRENT language — the initial
+  // render runs before initI18n resolves (default en-US), so entering the
+  // page must refresh them (C-19.1).
+  renderRejectConds();
+});
 els.navSettings.addEventListener("click", () => { switchView("settings"); renderSettings(); });
 
 // --- settings view ---
@@ -561,7 +628,7 @@ async function detectAndReportRenderer() {
 
 // --- chunked rendering ---
 function cardsPerRow() {
-  const g = els.photoGrid;
+  const g = currentGrid;
   const gap = 12;
   const cardW = 180;
   const contentW = (g.clientWidth || 1200) - 32; // 16px padding each side
@@ -571,16 +638,16 @@ function cardsPerRow() {
 function renderPhotos(photos) {
   currentPhotos = photos;
   renderedCount = 0;
-  els.photoGrid.innerHTML = "";
+  currentGrid.innerHTML = "";
   thumbObserver.disconnect();
   // Queued entries reference cards from the previous render — drop them.
   thumbQueue.length = 0;
   if (!photos.length) {
-    els.photoGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() ? "photos.filterEmpty" : "photos.empty")}</div>`;
+    currentGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
     return;
   }
-  els.photoGrid.scrollTop = 0;
+  currentGrid.scrollTop = 0;
   // Initial render: exactly the top 5 rows (in order). Further rows are
   // rendered on scroll / viewport fill.
   renderChunk(cardsPerRow() * 5);
@@ -595,7 +662,7 @@ function renderPhotos(photos) {
   // and a card that failed to enqueue stays unmarked so click/observer can
   // retry it.
   for (let i = renderedCount - 1; i >= 0; i--) {
-    const card = els.photoGrid.children[i];
+    const card = currentGrid.children[i];
     const img = card && card._img;
     if (!img || !card._photo) continue;
     try {
@@ -615,7 +682,7 @@ function renderChunk(limit = CHUNK_APPEND) {
   if (renderedCount >= total) return;
   const end = Math.min(renderedCount + limit, total);
   for (let i = renderedCount; i < end; i++) {
-    els.photoGrid.appendChild(buildCard(currentPhotos[i]));
+    currentGrid.appendChild(buildCard(currentPhotos[i]));
   }
   renderedCount = end;
   els.photoStatus.textContent =
@@ -637,14 +704,14 @@ function setSelectMode(on) {
   selectMode = on;
   els.btnSelectMode.textContent = t(on ? "photos.selectDone" : "photos.selectMode");
   els.btnSelectMode.classList.toggle("searchbar__select--active", on);
-  els.photoGrid.classList.toggle("selecting", on);
+  currentGrid.classList.toggle("selecting", on);
   els.selectionBar.hidden = !on;
   if (!on) {
     selectedIds.clear();
     hideSelectionHint();
   }
   // Update already-rendered cards in place (no re-render: keeps scroll pos).
-  for (const card of els.photoGrid.children) {
+  for (const card of currentGrid.children) {
     if (!card._photo) continue;
     card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
     const cb = card.querySelector(".card__check");
@@ -659,6 +726,7 @@ function updateSelectionBar() {
   els.selectionCount.textContent = t("photos.selectedCount", { count: n });
   els.btnSelectionTag.disabled = n === 0;
   els.btnSelectionClearTags.disabled = n === 0;
+  els.btnSelectionRate.disabled = n === 0;
 }
 
 function toggleSelect(photo) {
@@ -726,17 +794,19 @@ document.addEventListener("keydown", (e) => {
 // Drag-to-select: press anywhere on the grid and drag — cards intersecting
 // the rubber band are selected on release. A plain click (no drag) falls
 // through to the card click handler which toggles that one card.
+// Bound to BOTH grids (photos view + rejects view, C-19).
 let dragSel = null;
-els.photoGrid.addEventListener("mousedown", (e) => {
+function onGridMouseDown(e) {
   if (!selectMode || e.button !== 0) return;
   if (e.target.closest("button, input, select, .card__edit, .card__stars")) return;
-  const gridRect = els.photoGrid.getBoundingClientRect();
+  const grid = e.currentTarget;
+  const gridRect = grid.getBoundingClientRect();
   // Don't hijack the vertical scrollbar.
   if (e.clientX > gridRect.left + gridRect.width - 16) return;
   e.preventDefault(); // no text selection / native image drag
   const box = document.createElement("div");
   box.className = "selection-box";
-  els.photoGrid.appendChild(box);
+  grid.appendChild(box);
   const startX = e.clientX - gridRect.left;
   const startY = e.clientY - gridRect.top;
   dragSel = { startX, startY, box, gridRect, moved: false, last: null };
@@ -758,7 +828,7 @@ els.photoGrid.addEventListener("mousedown", (e) => {
     dragSel.box.style.width = R - L + "px";
     dragSel.box.style.height = B - T + "px";
     // Live highlight of intersecting cards (grid-relative coords).
-    for (const card of els.photoGrid.children) {
+    for (const card of grid.children) {
       if (!card._photo) continue;
       const r = card.getBoundingClientRect();
       const hit =
@@ -775,12 +845,12 @@ els.photoGrid.addEventListener("mousedown", (e) => {
     const d = dragSel;
     dragSel = null;
     box.remove();
-    for (const card of els.photoGrid.children) {
+    for (const card of grid.children) {
       card.classList.remove("card--sel-hover");
     }
     if (!d || !d.moved) return; // plain click → card click toggles it
     const { L, T, R, B } = d.last;
-    for (const card of els.photoGrid.children) {
+    for (const card of grid.children) {
       if (!card._photo) continue;
       const r = card.getBoundingClientRect();
       const hit =
@@ -797,7 +867,9 @@ els.photoGrid.addEventListener("mousedown", (e) => {
   };
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
-});
+}
+els.photoGrid.addEventListener("mousedown", onGridMouseDown);
+rejectGrid.addEventListener("mousedown", onGridMouseDown);
 
 // "Add tag" for the selection: pick ONE existing tag, appended to all
 // selected photos (manual tags, existing tags untouched). The panel has a
@@ -1111,12 +1183,12 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Keep filling until the viewport is covered (only while photos view visible).
-// Bounded per frame: at most 3 chunks, continue on the next frame, so a large
-// library can never block the UI with a synchronous render burst.
+// Keep filling until the viewport is covered (only while a photo grid is
+// visible — photos or rejects view). Bounded per frame: at most 3 chunks,
+// continue on the next frame, so a large library can never block the UI.
 function fillGridIfNeeded() {
-  if (els.viewPhotos.classList.contains("view--hidden")) return;
-  const g = els.photoGrid;
+  if (els.viewPhotos.classList.contains("view--hidden") && els.viewRejects.classList.contains("view--hidden")) return;
+  const g = currentGrid;
   let passes = 0;
   while (renderedCount < currentPhotos.length && g.scrollHeight <= g.clientHeight + 300) {
     renderChunk();
@@ -1142,7 +1214,7 @@ function scheduleScrollFill() {
 
 function scrollToViewport() {
   if (renderedCount >= currentPhotos.length) return;
-  const g = els.photoGrid;
+  const g = currentGrid;
   let passes = 0;
   while (
     renderedCount < currentPhotos.length &&
@@ -1156,14 +1228,16 @@ function scrollToViewport() {
   }
 }
 
-els.photoGrid.addEventListener("scroll", () => {
-  const g = els.photoGrid;
+function onGridScroll() {
+  const g = currentGrid;
   if (renderedCount >= currentPhotos.length) return;
   // Viewport bottom is beyond the rendered region -> render the viewed area.
   if (g.scrollTop + g.clientHeight * 2 + 600 > g.scrollHeight) {
     scheduleScrollFill();
   }
-});
+}
+els.photoGrid.addEventListener("scroll", onGridScroll);
+rejectGrid.addEventListener("scroll", onGridScroll);
 
 // --- lazy thumbnails via IntersectionObserver (only near-viewport cards) ---
 const THUMB_MAX_INFLIGHT = 4;
@@ -1185,7 +1259,9 @@ const thumbObserver = new IntersectionObserver(
       if (t._img && t._photo) setThumb(t._img, t._photo);
     }
   },
-  { root: els.photoGrid, rootMargin: "300px" }
+  // root: null = viewport — shared by the photos grid AND the rejects grid
+  // (C-19); the 300px margin still preloads just before cards scroll in.
+  { root: null, rootMargin: "300px" }
 );
 
 function showPlaceholder(img, photo) {
@@ -1874,6 +1950,187 @@ async function runSearch() {
 }
 
 // ---------------------------------------------------------------------------
+// Rejects view (C-19): a photos-like grid WITHOUT filename search and the
+// semantic/tag mode — instead a "reject conditions" panel (blur / under /
+// over / eyes-closed; UI-only for now) sits next to the filter button.
+// ---------------------------------------------------------------------------
+let allRejects = []; // unfiltered result of the current rejects query
+
+function renderRejectStatus(n) {
+  els.rejectStatus.textContent = t("photos.status.count", { count: n });
+}
+
+async function loadRejects() {
+  try {
+    const photos = await invoke("get_photos", { folderId: null });
+    allRejects = photos;
+    // Same filter pipeline as the photos view (colors/lens/focal/rating are
+    // shared); reject conditions are UI-only for now.
+    const shown = applyFilters(photos);
+    const wasGrid = currentGrid;
+    currentGrid = rejectGrid;
+    renderPhotos(shown);
+    currentGrid = wasGrid;
+    renderRejectStatus(shown.length);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+let rejectSearchTimer = null;
+els.rejectSearchInput.addEventListener("input", () => {
+  clearTimeout(rejectSearchTimer);
+  rejectSearchTimer = setTimeout(runRejectSearch, 500);
+});
+
+async function runRejectSearch() {
+  const q = els.rejectSearchInput.value.trim();
+  if (!q) {
+    loadRejects();
+    return;
+  }
+  try {
+    const res = await invoke("search", { query: q, mode: "semantic" });
+    allRejects = res;
+    const shown = applyFilters(res);
+    const wasGrid = currentGrid;
+    currentGrid = rejectGrid;
+    renderPhotos(shown);
+    currentGrid = wasGrid;
+    renderRejectStatus(shown.length);
+  } catch (e) {
+    console.error(e);
+    const wasGrid = currentGrid;
+    currentGrid = rejectGrid;
+    renderPhotos([]);
+    currentGrid = wasGrid;
+    els.rejectStatus.textContent = t("search.semantic.error");
+  }
+}
+
+// Rating dropdown of the rejects view shares `minRating` with the photos
+// view — keep both selects in sync (C-19).
+els.ratingFilterRejects.addEventListener("change", () => {
+  minRating = parseInt(els.ratingFilterRejects.value, 10) || 0;
+  ratingFilterEl.value = String(minRating);
+  if (els.viewRejects.classList.contains("view--hidden")) {
+    renderPhotos(applyFilters(allPhotos));
+  } else {
+    renderPhotos(applyFilters(allRejects));
+  }
+});
+
+// Both "Filter" buttons (photos + rejects) open the same global panel,
+// anchored under whichever button was clicked.
+els.btnColorFilterRejects.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  colorFilterPanel.hidden = !colorFilterPanel.hidden;
+  if (!colorFilterPanel.hidden) {
+    const r = els.btnColorFilterRejects.getBoundingClientRect();
+    colorFilterPanel.style.left = `${Math.max(8, r.left)}px`;
+    colorFilterPanel.style.top = `${r.bottom + 6}px`;
+    await renderFilterLens();
+  }
+});
+
+// Reject conditions (C-19): UI-only — selection state is kept and shown,
+// but does not filter yet (the AI detection comes in a later version).
+const REJECT_CONDS = ["blur", "under", "over", "eyes"];
+const activeRejectConds = new Set();
+
+function renderRejectConds() {
+  els.rejectCondItems.textContent = "";
+  for (const c of REJECT_CONDS) {
+    const label = document.createElement("label");
+    label.className = "reject-cond__item";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = activeRejectConds.has(c);
+    cb.addEventListener("change", () => {
+      if (cb.checked) activeRejectConds.add(c);
+      else activeRejectConds.delete(c);
+      renderRejectConds();
+      els.btnRejectCond.classList.toggle(
+        "searchbar__filter--active",
+        activeRejectConds.size > 0
+      );
+    });
+    const span = document.createElement("span");
+    span.textContent = t(`rejects.${c}`);
+    label.appendChild(cb);
+    label.appendChild(span);
+    els.rejectCondItems.appendChild(label);
+  }
+}
+renderRejectConds();
+
+els.btnRejectCond.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.rejectCondPanel.hidden = !els.rejectCondPanel.hidden;
+  if (!els.rejectCondPanel.hidden) {
+    const r = els.btnRejectCond.getBoundingClientRect();
+    els.rejectCondPanel.style.left = `${Math.max(8, r.left)}px`;
+    els.rejectCondPanel.style.top = `${r.bottom + 6}px`;
+  }
+});
+els.btnRejectCondClear.addEventListener("click", () => {
+  activeRejectConds.clear();
+  renderRejectConds();
+  els.btnRejectCond.classList.remove("searchbar__filter--active");
+});
+document.addEventListener("click", (e) => {
+  if (
+    !els.rejectCondPanel.hidden &&
+    !e.target.closest("#reject-cond-panel, #btn-reject-cond")
+  ) {
+    els.rejectCondPanel.hidden = true;
+  }
+});
+
+// Multi-select "Rate" (C-19): pick 1-5 stars, apply to ALL selected photos.
+els.btnSelectionRate.addEventListener("click", () => {
+  if (!selectedIds.size) return;
+  renderRatePicker();
+  els.rateOverlay.hidden = false;
+});
+
+function renderRatePicker() {
+  els.ratePicker.textContent = "";
+  for (let n = 1; n <= 5; n++) {
+    const btn = document.createElement("button");
+    btn.className = "rate-picker__star" + (n <= 5 ? " rate-picker__star--fill" : "");
+    btn.textContent = "★";
+    btn.title = t("card.rating.star", { n });
+    btn.dataset.rating = String(n);
+    btn.addEventListener("click", async () => {
+      const ids = [...selectedIds];
+      els.rateOverlay.hidden = true;
+      try {
+        await invoke("set_rating_files", { fileIds: ids, rating: n });
+        showSelectionHint(t("photos.rated", { count: ids.length, rating: n }));
+        // Update the visible cards in place (keeps scroll position).
+        for (const p of currentPhotos) {
+          if (!selectedIds.has(p.id)) continue;
+          p.rating = n;
+          const stars = p._card && p._card.querySelector(".card__stars");
+          if (stars) renderCardStars(stars, n);
+        }
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+    els.ratePicker.appendChild(btn);
+  }
+}
+els.rateCancel.addEventListener("click", () => {
+  els.rateOverlay.hidden = true;
+});
+els.rateOverlay.addEventListener("click", (e) => {
+  if (e.target === els.rateOverlay) els.rateOverlay.hidden = true;
+});
+els.btnSelectModeRejects.addEventListener("click", () => setSelectMode(!selectMode));
+
+// ---------------------------------------------------------------------------
 // Toolbar / events
 // ---------------------------------------------------------------------------
 els.btnAdd.addEventListener("click", async () => {
@@ -1914,19 +2171,23 @@ listen("scan-complete", () => {
   lensCache = null;
   markFoldersDirty();
   loadPhotos();
+  loadRejects();
   loadFolders();
 });
 
 // Language switch: re-render current view with new locale
 onLanguageChange(() => {
   applyStaticI18n();
-    initTheme();
+  initTheme();
   if (!els.viewPhotos.classList.contains("view--hidden")) {
     renderPhotos(currentPhotos);
   } else if (!els.viewFolders.classList.contains("view--hidden")) {
     if (folderCache) renderFolders(folderCache);
   } else if (!els.viewTags.classList.contains("view--hidden")) {
     renderTags();
+  } else if (!els.viewRejects.classList.contains("view--hidden")) {
+    renderPhotos(currentPhotos);
+    renderRejectConds();
   } else {
     renderSettings();
   }

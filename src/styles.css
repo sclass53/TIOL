@@ -28,7 +28,8 @@ html, body {
   background: var(--bg-primary);
 }
 
-/* Sidebar 48px */
+/* Sidebar — collapsible (C-19.2): icons-only when collapsed, labels shown
+   when expanded. Width animates; expanded by default. */
 .sidebar {
   width: 48px;
   min-width: 48px;
@@ -36,13 +37,19 @@ html, body {
   border-right: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding-top: 16px;
   gap: 8px;
+  overflow: hidden; /* labels must never bleed out while collapsing */
+  transition: width 0.22s ease, min-width 0.22s ease;
+}
+.sidebar--open {
+  width: 172px;
+  min-width: 172px;
 }
 
 .sidebar__btn {
-  width: 32px;
+  width: 100%;
   height: 32px;
   border: none;
   background: transparent;
@@ -54,12 +61,35 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  padding: 0;
+  white-space: nowrap;
+}
+.sidebar--open .sidebar__btn {
+  justify-content: flex-start;
+  padding-left: 14px;
+  font-size: 15px;
+}
+
+/* Label next to the icon: hidden while collapsed, fades in when expanded */
+.sidebar__label {
+  display: none;
+  opacity: 0;
+  transition: opacity 0.18s ease 0.05s;
+  font-size: 13px;
+  font-weight: 500;
+}
+.sidebar--open .sidebar__label {
+  display: inline;
+  opacity: 1;
 }
 
 .sidebar__btn--active {
   color: var(--accent);
 }
 
+/* Active indicator bar: at the sidebar edge when collapsed, at the button
+   edge when expanded (the collapsed offset would clip outside). */
 .sidebar__btn--active::before {
   content: "";
   position: absolute;
@@ -69,6 +99,32 @@ html, body {
   width: 2px;
   background: var(--accent);
   border-radius: 2px;
+}
+.sidebar--open .sidebar__btn--active::before {
+  left: 0;
+}
+
+/* Collapse/expand toggle at the bottom of the sidebar */
+.sidebar__toggle {
+  margin-top: auto;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.sidebar__toggle:hover {
+  color: var(--text-primary);
+}
+.sidebar__toggle .sidebar__label {
+  font-size: 12px;
+  font-weight: 400;
 }
 
 /* Main */
@@ -264,6 +320,52 @@ html, body {
 .color-filter__focal-sep {
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+/* Reject conditions panel (C-19): checkbox rows, UI-only for now. The
+   checkbox itself carries the state — no background highlight on select. */
+.reject-cond__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reject-cond__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.reject-cond__item:hover {
+  background: var(--bg-elevated);
+}
+
+/* Star-rating picker for the multi-select "Rate" action (C-19) */
+.rate-picker {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+.rate-picker__star {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+}
+.rate-picker__star:hover {
+  color: #ffd60a;
+  transform: scale(1.15);
+}
+.rate-picker__star--fill {
+  color: #ffd60a;
 }
 
 /* Color dots: selection bar (22px), filter panel (18px), cards (9px) */

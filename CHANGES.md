@@ -3,6 +3,22 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19 · 2025-08 — 废片筛选页面 + 多选批量评分
+
+**需求**：① 新增第 5 页签「废片」（类似主页的照片网格）：搜索栏**去掉文件名搜索与 semantic/tag 模式下拉**，原下拉位置改为「废片条件」按钮（下拉面板可勾选 模糊/欠曝/过曝/闭眼——**仅 UI 状态，检测逻辑后续实现**）；保留 筛选（颜色/镜头/焦段）、内容搜索（语义）、星数筛选、多选。② 两个页面（照片/废片）的多选都支持**一键应用星数**（点击出星数选择框）；「删除标签」（一键清空）**不清星数**（现有实现已满足）。
+
+**实现**：
+
+1. **页面结构**：侧栏第 5 按钮 🗑️（nav-rejects，位于标签与设置之间）；`view-rejects` 搜索栏 = `[筛选][废片条件][星数下拉][内容搜索输入框][多选]` + `#reject-grid` 网格 + 状态栏；废片条件面板（`#reject-cond-panel`，仿 color-filter 下拉，4 个复选框 + 清除）；星数选择对话框 `#rate-overlay`（5 个大号 ★ 按钮）。
+2. **渲染管线参数化**（关键重构）：`currentGrid`（photo-grid / reject-grid 二选一）——渲染、分块填充、滚动、缩略图、框选全部改操作当前网格；框选与滚动 handler 同时绑定两个网格（`e.currentTarget`）；缩略图 IntersectionObserver 的 root 由 photo-grid 改为 **viewport（null）**，两网格通用；`switchView` 增加 rejects 分支并切换 currentGrid；离开照片类视图退出多选。
+3. **废片页数据与搜索**：`loadRejects()`（全量照片经共享 `applyFilters` 渲染到 reject-grid，颜色/镜头/焦段/星数筛选两页共享）；`#reject-search-input` 500ms 防抖 → 语义搜索（无 mode 下拉，固定 semantic）；星数下拉与主页**共享 minRating 并双向同步**；「筛选」按钮两页共用同一全局面板（按点击按钮定位）。
+4. **废片条件（UI-only）**：勾选状态存 `activeRejectConds`，按钮高亮、可清除——**不改变照片列表**（检测逻辑留给后续版本）。
+5. **批量评分**：后端新命令 `set_rating_files(file_ids, rating)`（校验 0–5，循环调用现有 db.set_rating）；selection-bar 新增「评分」按钮 → 星数选择框 → 应用后选中卡片 `p.rating` 原地刷新（`renderCardStars`）+ 提示「已为 N 张照片设置 X 星」，保持多选；两页共用（selection-bar 全局）。
+6. **i18n**：`nav.rejects`、`rejects.cond/blur/under/over/eyes/clear`、`photos.rateSelected/rateTitle/rated`（中英同步），messages.js 重新生成。
+7. 无 schema 变更（rating 字段 C-17 已有）。
+
+**行为对照**：侧栏 5 页签切换正常 ✓；废片页无文件名框/无模式下拉，布局为 筛选|废片条件|星数|内容搜索|多选 ✓；废片条件勾选可交互但不影响结果 ✓；两页多选 → 评分 → 批量星数即时生效 ✓；删除标签后星数保留 ✓；星数下拉两页同步 ✓。
+
 ## C-18 · 2025-08 — 基于 SHA256 的自我更新检测
 
 **需求**：工作流 push 到发布仓库（TIOL-site → tiol.netlify.app）时，在 version.json 中记录 Windows/macOS 可执行文件的 SHA256；本地启动时计算**自身 current_exe 的 SHA256** 与远程比对，实现检测更新——**更新判断完全不依赖烧录进 exe 的版本号**（tauri version 保持 0.1.0 不动），版本号仅用于展示。

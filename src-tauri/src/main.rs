@@ -344,6 +344,27 @@ fn set_rating(
         .ok_or_else(|| "file not found".to_string())
 }
 
+/// Batch star rating (C-19): apply ONE rating to many files at once
+/// (multi-select "Rate" button). 0 clears the rating on all of them.
+#[tauri::command]
+fn set_rating_files(
+    state: tauri::State<AppState>,
+    file_ids: Vec<i64>,
+    rating: i64,
+) -> Result<usize, String> {
+    if !(0..=5).contains(&rating) {
+        return Err("rating must be between 0 and 5".to_string());
+    }
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    log::info!("set_rating_files: {} files, rating={}", file_ids.len(), rating);
+    for id in &file_ids {
+        state.db.set_rating(*id, rating)?;
+    }
+    Ok(file_ids.len())
+}
+
 #[tauri::command]
 fn get_setting(
     state: tauri::State<AppState>,
@@ -1288,6 +1309,7 @@ fn main() {
             update_tags,
             get_file_tags,
             set_rating,
+            set_rating_files,
             get_setting,
             set_setting,
             restart_app,

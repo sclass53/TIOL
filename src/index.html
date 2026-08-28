@@ -8,11 +8,13 @@
 </head>
 <body>
   <div class="app">
-    <nav class="sidebar" aria-label="Menu">
-      <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos">📷</button>
-      <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders">📁</button>
-      <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags">🏷️</button>
-      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings">⚙</button>
+    <nav class="sidebar sidebar--open" id="sidebar" aria-label="Menu">
+      <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos">📷<span class="sidebar__label" data-i18n="nav.photos">照片</span></button>
+      <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders">📁<span class="sidebar__label" data-i18n="nav.folders">目录</span></button>
+      <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags">🏷️<span class="sidebar__label" data-i18n="nav.tags">标签</span></button>
+      <button class="sidebar__btn" id="nav-rejects" data-i18n-title="nav.rejects" data-i18n-aria="nav.rejects">🗑️<span class="sidebar__label" data-i18n="nav.rejects">废片</span></button>
+      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings">⚙<span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
+      <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单">◀<span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
     </nav>
 
     <main class="main">
@@ -42,6 +44,7 @@
           <span class="selection-bar__hint" id="selection-hint" hidden></span>
           <span class="selection-bar__dots" id="selection-color-dots"></span>
           <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+          <button class="btn btn--ghost" id="btn-selection-rate" data-i18n="photos.rateSelected" disabled>评分</button>
           <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
           <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
         </div>
@@ -77,6 +80,27 @@
           <ul class="tags__list" id="tag-list"></ul>
           <div class="settings__hint" id="tagging-status" hidden></div>
         </div>
+      </section>
+
+      <!-- Rejects view (C-19): like the photos grid but with reject-condition
+           UI instead of the semantic/tag mode; conditions are UI-only for now -->
+      <section class="view view--hidden" id="view-rejects">
+        <div class="searchbar">
+          <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-rejects" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
+          <button class="btn btn--ghost searchbar__filter" id="btn-reject-cond" data-i18n="rejects.cond">废片条件</button>
+          <select class="searchbar__mode" id="rating-filter-rejects" data-i18n-title="photos.ratingFilter">
+            <option value="0" data-i18n="photos.ratingAll">全部</option>
+            <option value="1" data-i18n="photos.rating1">≥ 1 星</option>
+            <option value="2" data-i18n="photos.rating2">≥ 2 星</option>
+            <option value="3" data-i18n="photos.rating3">≥ 3 星</option>
+            <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
+            <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
+          </select>
+          <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
+          <button class="btn searchbar__select" id="btn-select-mode-rejects" data-i18n="photos.selectMode">多选</button>
+        </div>
+        <div class="grid" id="reject-grid"></div>
+        <div class="statusbar" id="reject-status">0 photos</div>
       </section>
 
       <!-- Settings view -->
@@ -192,6 +216,25 @@
       <input class="color-filter__focal-input" id="filter-focal-max" type="number" min="0" step="1" placeholder="max mm" data-i18n-placeholder="photos.filterFocalMax" />
     </div>
     <button class="btn btn--ghost color-filter__clear" id="btn-color-filter-clear" data-i18n="photos.filterClear">清除</button>
+  </div>
+
+  <!-- Reject-condition panel (C-19): UI-only for now — the actual blur /
+       underexposure / overexposure / eyes-closed detection comes later -->
+  <div class="color-filter reject-cond-panel" id="reject-cond-panel" hidden>
+    <div class="color-filter__title" data-i18n="rejects.cond">废片条件</div>
+    <div class="reject-cond__items" id="reject-cond-items"></div>
+    <button class="btn btn--ghost color-filter__clear" id="btn-reject-cond-clear" data-i18n="rejects.clear">清除</button>
+  </div>
+
+  <!-- Star-rating picker for the multi-select "Rate" action (C-19) -->
+  <div class="dialog-overlay" id="rate-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog__title" data-i18n="photos.rateTitle">应用星数</div>
+      <div class="rate-picker" id="rate-picker"></div>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" id="rate-cancel" data-i18n="dialog.cancel">取消</button>
+      </div>
+    </div>
   </div>
 
   <!-- Generic confirm dialog (clears tags, etc.) -->

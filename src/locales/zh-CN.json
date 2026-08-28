@@ -6,7 +6,12 @@
     "photos": "照片",
     "folders": "目录",
     "tags": "标签",
+    "rejects": "废片",
     "settings": "设置"
+  },
+  "sidebar": {
+    "expand": "展开菜单",
+    "collapse": "收起菜单"
   },
   "search": {
     "name": {
@@ -35,6 +40,9 @@
     "deleteTags": "删除标签",
     "deleteTagsConfirm": "删除选中 {count} 张照片的所有标签（文字和颜色）？",
     "tagsDeleted": "已清除 {count} 张照片",
+    "rateSelected": "评分",
+    "rateTitle": "应用星数",
+    "rated": "已为 {count} 张照片设置 {rating} 星",
     "filterColor": "颜色筛选",
     "filterBtn": "筛选",
     "filterClear": "清除",
@@ -106,6 +114,14 @@
     "confirmTitle": "确认操作",
     "ok": "确定",
     "cancel": "取消"
+  },
+  "rejects": {
+    "cond": "废片条件",
+    "blur": "模糊",
+    "under": "欠曝",
+    "over": "过曝",
+    "eyes": "闭眼",
+    "clear": "清除"
   },
   "update": {
     "label": "更新",

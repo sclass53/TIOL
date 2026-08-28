@@ -54,7 +54,7 @@ const fail = (msg) => {
   // DOM-tag false positives from the t("...") regex (createElement etc.).
   const dom = new Set([
     "li", "span", "button", "canvas", "webgl", "div", "img",
-    ".card", "tr", "td", "input", "select",
+    ".card", "tr", "td", "input", "select", "label",
   ]);
   for (const k of used) {
     if (!(k in en) && !dom.has(k)) fail(`referenced i18n key is missing: ${k}`);

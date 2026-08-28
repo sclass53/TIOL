@@ -6,7 +6,12 @@
     "photos": "Photos",
     "folders": "Folders",
     "tags": "Tags",
+    "rejects": "Rejects",
     "settings": "Settings"
+  },
+  "sidebar": {
+    "expand": "Expand menu",
+    "collapse": "Collapse menu"
   },
   "search": {
     "name": {
@@ -35,6 +40,9 @@
     "deleteTags": "Delete tags",
     "deleteTagsConfirm": "Remove ALL tags (text and colors) from the {count} selected photos?",
     "tagsDeleted": "{count} photos cleared",
+    "rateSelected": "Rate",
+    "rateTitle": "Apply star rating",
+    "rated": "{count} photos rated {rating}★",
     "filterColor": "Color filter",
     "filterBtn": "Filter",
     "filterClear": "Clear",
@@ -106,6 +114,14 @@
     "confirmTitle": "Confirm action",
     "ok": "OK",
     "cancel": "Cancel"
+  },
+  "rejects": {
+    "cond": "Reject conditions",
+    "blur": "Blurry",
+    "under": "Underexposed",
+    "over": "Overexposed",
+    "eyes": "Eyes closed",
+    "clear": "Clear"
   },
   "update": {
     "label": "Updates",

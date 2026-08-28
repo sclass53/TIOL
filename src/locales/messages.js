@@ -9,7 +9,12 @@ export const MESSAGES = {
       "photos": "照片",
       "folders": "目录",
       "tags": "标签",
+      "rejects": "废片",
       "settings": "设置"
+    },
+    "sidebar": {
+      "expand": "展开菜单",
+      "collapse": "收起菜单"
     },
     "search": {
       "name": {
@@ -38,6 +43,9 @@ export const MESSAGES = {
       "deleteTags": "删除标签",
       "deleteTagsConfirm": "删除选中 {count} 张照片的所有标签（文字和颜色）？",
       "tagsDeleted": "已清除 {count} 张照片",
+      "rateSelected": "评分",
+      "rateTitle": "应用星数",
+      "rated": "已为 {count} 张照片设置 {rating} 星",
       "filterColor": "颜色筛选",
       "filterBtn": "筛选",
       "filterClear": "清除",
@@ -109,6 +117,14 @@ export const MESSAGES = {
       "confirmTitle": "确认操作",
       "ok": "确定",
       "cancel": "取消"
+    },
+    "rejects": {
+      "cond": "废片条件",
+      "blur": "模糊",
+      "under": "欠曝",
+      "over": "过曝",
+      "eyes": "闭眼",
+      "clear": "清除"
     },
     "update": {
       "label": "更新",
@@ -185,7 +201,12 @@ export const MESSAGES = {
       "photos": "Photos",
       "folders": "Folders",
       "tags": "Tags",
+      "rejects": "Rejects",
       "settings": "Settings"
+    },
+    "sidebar": {
+      "expand": "Expand menu",
+      "collapse": "Collapse menu"
     },
     "search": {
       "name": {
@@ -214,6 +235,9 @@ export const MESSAGES = {
       "deleteTags": "Delete tags",
       "deleteTagsConfirm": "Remove ALL tags (text and colors) from the {count} selected photos?",
       "tagsDeleted": "{count} photos cleared",
+      "rateSelected": "Rate",
+      "rateTitle": "Apply star rating",
+      "rated": "{count} photos rated {rating}★",
       "filterColor": "Color filter",
       "filterBtn": "Filter",
       "filterClear": "Clear",
@@ -285,6 +309,14 @@ export const MESSAGES = {
       "confirmTitle": "Confirm action",
       "ok": "OK",
       "cancel": "Cancel"
+    },
+    "rejects": {
+      "cond": "Reject conditions",
+      "blur": "Blurry",
+      "under": "Underexposed",
+      "over": "Overexposed",
+      "eyes": "Eyes closed",
+      "clear": "Clear"
     },
     "update": {
       "label": "Updates",
