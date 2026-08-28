@@ -3,6 +3,21 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.3 · 2025-08 — 废片条件检测逻辑（过曝/欠曝/闭眼）
+
+**需求**：烂片条件**默认全勾选**并接入真实筛选逻辑：① 过曝 = 亮度 252–255 像素占比 > 20%；② 欠曝 = 亮度 <20 占比 >30% **且** 最亮像素亮度 <150；③ 闭眼 = 语义搜索"closed eyes"相似度 > 0.11；④ 模糊暂不实现（勾选但不过滤）。
+
+**实现**：
+
+1. **曝光检测**（新模块 `rejects.rs`）：`analyze_exposure`——解码 → 缩放到 256px（全局属性足够，大图快）→ luma 直方图统计；过曝/欠曝按上述规则；解码失败计为"都不是"（不重试）。单测 4 项（纯白/纯黑/中灰/黑白混合含高光点）。
+2. **DB 缓存（增量）**：files 加 `overexposed/underexposed/eyes_closed INTEGER`（NULL=未检测）；`FileRecord` + FILE_COLS 加 3 列（serde skip None）；`get_files_missing_exposure`（分页）/`count_files_missing_exposure`/`update_reject_exposure`/`update_reject_eyes`——**只处理 NULL 的行**，新照片下次自动补算。
+3. **闭眼检测**（main.rs `compute_reject_metrics`）：复用已存 embedding——`embed_text("closed eyes")` 一次 + 全库向量余弦（1034 张 ≈ 秒级），>0.11 → eyes_closed=1；每次全量重算（快）。
+4. **曝光分析**：`spawn_blocking` 分页处理（每页 50），每 20 张发 `reject-analysis-progress {done,total}`，完成发 `reject-analysis-complete`——UI 状态栏显示"正在分析照片… N/M"，完成自动刷新列表。
+5. **前端**：`activeRejectConds` 默认 `{blur,under,over,eyes}` 全勾；`applyRejectConds`（条件间**并集**，与其他筛选**交集**；条件激活而指标为 NULL 的照片不显示——C-15 规则）；`ensureRejectAnalysis` 每次会话只触发一次（进入废片页/勾选条件时），后端增量幂等；空结果显示"没有符合筛选条件的照片"。
+6. i18n：`rejects.analyzing`（中英同步）。
+
+**行为对照**：进入废片页 → 状态栏"正在分析照片…"（首次，含解码约 1–2 分钟）→ 完成后列表自动刷新为满足已勾选条件的照片 ✓；默认 4 项全勾（模糊不生效）✓；取消勾选条件即时重筛 ✓；新加照片再次进入自动补算 ✓。
+
 ## C-19 · 2025-08 — 废片筛选页面 + 多选批量评分
 
 **需求**：① 新增第 5 页签「废片」（类似主页的照片网格）：搜索栏**去掉文件名搜索与 semantic/tag 模式下拉**，原下拉位置改为「废片条件」按钮（下拉面板可勾选 模糊/欠曝/过曝/闭眼——**仅 UI 状态，检测逻辑后续实现**）；保留 筛选（颜色/镜头/焦段）、内容搜索（语义）、星数筛选、多选。② 两个页面（照片/废片）的多选都支持**一键应用星数**（点击出星数选择框）；「删除标签」（一键清空）**不清星数**（现有实现已满足）。

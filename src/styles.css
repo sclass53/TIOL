@@ -88,6 +88,15 @@ html, body {
   color: var(--accent);
 }
 
+/* Fixed-width icon slot: text glyphs (⚙, ◀) render narrower than color
+   emojis (📷, 🗑️) — a fixed centered slot keeps every row aligned (C-19.2). */
+.sidebar__icon {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  display: inline-block;
+}
+
 /* Active indicator bar: at the sidebar edge when collapsed, at the button
    edge when expanded (the collapsed offset would clip outside). */
 .sidebar__btn--active::before {

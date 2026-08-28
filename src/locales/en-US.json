@@ -121,7 +121,9 @@
     "under": "Underexposed",
     "over": "Overexposed",
     "eyes": "Eyes closed",
-    "clear": "Clear"
+    "clear": "Clear",
+    "analyzing": "Analyzing Parameters… {done}/{total}",
+    "analyzingTitle": "Analyzing Parameters"
   },
   "update": {
     "label": "Updates",

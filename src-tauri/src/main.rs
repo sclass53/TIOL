@@ -8,6 +8,7 @@ mod db;
 mod error;
 mod exif;
 mod logbuf;
+mod rejects;
 mod scanner;
 mod search;
 mod update;
@@ -111,6 +112,9 @@ struct AppState {
     tag_cache: Arc<std::sync::RwLock<Vec<ai::engine::TagVec>>>,
     ai_status: Arc<std::sync::Mutex<Option<ModelStatus>>>,
     watcher: Arc<std::sync::Mutex<Option<watcher::FileWatcher>>>,
+    /// Guards concurrent reject-metrics runs (startup warmup + entering the
+    /// rejects page can both fire it; a duplicate run is a no-op).
+    reject_analysis_running: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Load (or reload) the AI engine with the provider mode from settings
@@ -363,6 +367,95 @@ fn set_rating_files(
         state.db.set_rating(*id, rating)?;
     }
     Ok(file_ids.len())
+}
+
+/// Reject-condition analysis (C-19.3). Two parts:
+/// 1. Eyes-closed: cosine of every stored embedding vs "closed eyes"
+///    text embedding, > 0.11 → eyes_closed=1. Recomputed for ALL files
+///    with embeddings (fast: one text embed + a pass over ~3MB of vectors).
+/// 2. Exposure (over/underexposed): pixel-luma statistics, INCREMENTAL —
+///    only files whose overexposed is still NULL (new/changed files get
+///    re-analyzed; unreadable images are marked 0/0 so they don't retry).
+///    Runs in a blocking task and emits reject-analysis-progress /
+///    reject-analysis-complete so the UI can show "analyzing…".
+#[tauri::command]
+async fn compute_reject_metrics(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    // Duplicate runs (startup warmup + page entry) are no-ops — the work is
+    // incremental anyway, but one pass at a time keeps progress readable.
+    if state
+        .reject_analysis_running
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return Ok(());
+    }
+    log::info!("compute_reject_metrics");
+    // Everything below in one async block so the running flag is ALWAYS
+    // released, even when the eyes-closed step errors out early.
+    let result: Result<(), String> = async {
+        // 1) Eyes-closed via stored embeddings (no image decode).
+        {
+            let guard = state.ai_engine.lock().await;
+            if let Some(eng) = guard.as_ref() {
+                let q = eng.embed_text("closed eyes").map_err(|e| e.to_string())?;
+                drop(guard);
+                let rows = state.db.get_embeddings().map_err(|e| e.to_string())?;
+                let mut closed = 0usize;
+                for (id, emb) in &rows {
+                    let eyes = ai::engine::cosine(emb, &q) > 0.11;
+                    state.db.update_reject_eyes(*id, eyes).map_err(|e| e.to_string())?;
+                    if eyes {
+                        closed += 1;
+                    }
+                }
+                log::info!("reject metrics: eyes-closed checked {} files ({} closed)", rows.len(), closed);
+            }
+        }
+        // 2) Exposure: incremental, thumbnail-first decode in a blocking task.
+        let db = state.db.clone();
+        let app_dir = state.app_dir.clone();
+        let total = db.count_files_missing_exposure().map_err(|e| e.to_string())?;
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+            let cache = utils::cache_dir(&app_dir);
+            let mut offset = 0i64;
+            let mut done = 0i64;
+            loop {
+                let batch = db.get_files_missing_exposure(50, offset).map_err(|e| e.to_string())?;
+                if batch.is_empty() {
+                    break;
+                }
+                for (id, path) in &batch {
+                    // Thumbnail pixels are enough for exposure stats and are
+                    // far cheaper to decode than originals (C-19.4).
+                    let src = rejects::thumbnail_or_original(&cache, std::path::Path::new(path));
+                    let (over, under) = rejects::analyze_exposure(&src);
+                    db.update_reject_exposure(*id, over, under).map_err(|e| e.to_string())?;
+                    done += 1;
+                    if done % 20 == 0 || done == total {
+                        let _ = handle.emit(
+                            "reject-analysis-progress",
+                            serde_json::json!({ "done": done, "total": total }),
+                        );
+                    }
+                }
+                offset += batch.len() as i64;
+            }
+            let _ = handle.emit("reject-analysis-complete", serde_json::json!({}));
+            log::info!("reject metrics: exposure analyzed {done} files");
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        Ok(())
+    }
+    .await;
+    state
+        .reject_analysis_running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    result
 }
 
 #[tauri::command]
@@ -1197,6 +1290,7 @@ fn main() {
                 tag_cache: tag_cache.clone(),
                 ai_status: ai_status.clone(),
                 watcher: Arc::new(std::sync::Mutex::new(None)),
+                reject_analysis_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
             // Engine loads AFTER models are verified (see the downloader
             // task above) — no eager load here, or a first-time user whose
@@ -1310,6 +1404,7 @@ fn main() {
             get_file_tags,
             set_rating,
             set_rating_files,
+            compute_reject_metrics,
             get_setting,
             set_setting,
             restart_app,

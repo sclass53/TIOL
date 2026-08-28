@@ -43,21 +43,31 @@ pub struct FileRecord {
     /// User star rating (C-17): 1-5, None = unrated (0 on the frontend).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<i64>,
+    /// Reject metrics (C-19.3): 1 = overexposed, 0 = no, None = not analyzed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overexposed: Option<i64>,
+    /// 1 = underexposed, 0 = no, None = not analyzed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underexposed: Option<i64>,
+    /// 1 = eyes closed (semantic similarity > 0.11), 0 = no, None = n/a.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eyes_closed: Option<i64>,
 }
 
 /// Shared SELECT column list for `files` (no alias) — column 9 is the
 /// comma-joined tag names (NULL when none), column 10 the comma-joined
 /// color labels, columns 11/12 the EXIF lens + focal length (C-15),
-/// column 13 the user star rating (C-17, NULL when unrated).
+/// column 13 the user star rating (C-17, NULL when unrated), columns
+/// 14-16 the reject metrics (C-19.3).
 const FILE_COLS: &str = "id, folder_id, COALESCE(display_path, path), filename, size, mtime, created_at, description, ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = files.id), \
     (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = files.id), \
-    lens, focal_length, rating";
+    lens, focal_length, rating, overexposed, underexposed, eyes_closed";
 /// Same, for queries aliasing the table as `f`.
 const FILE_COLS_F: &str = "f.id, f.folder_id, COALESCE(f.display_path, f.path), f.filename, f.size, f.mtime, f.created_at, f.description, f.ai_processed, \
     (SELECT GROUP_CONCAT(t.name, ',') FROM file_tags ft JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = f.id), \
     (SELECT GROUP_CONCAT(color, ',') FROM color_tags ct WHERE ct.file_id = f.id), \
-    f.lens, f.focal_length, f.rating";
+    f.lens, f.focal_length, f.rating, f.overexposed, f.underexposed, f.eyes_closed";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTag {
@@ -201,6 +211,15 @@ impl Db {
         }
         if !filecols.iter().any(|c| c == "rating") {
             conn.execute_batch("ALTER TABLE files ADD COLUMN rating INTEGER;")?;
+        }
+        if !filecols.iter().any(|c| c == "overexposed") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN overexposed INTEGER;")?;
+        }
+        if !filecols.iter().any(|c| c == "underexposed") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN underexposed INTEGER;")?;
+        }
+        if !filecols.iter().any(|c| c == "eyes_closed") {
+            conn.execute_batch("ALTER TABLE files ADD COLUMN eyes_closed INTEGER;")?;
         }
         // idx_files_ai needs the column to exist, so it is created after migrate.
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_files_ai ON files(ai_processed);")?;
@@ -957,6 +976,70 @@ impl Db {
         Ok(out)
     }
 
+    // ---- reject metrics (C-19.3) ----
+
+    /// Files whose exposure was never analyzed (incremental backfill),
+    /// paged. NULL overexposed = not analyzed yet.
+    pub fn get_files_missing_exposure(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<(i64, String)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, COALESCE(display_path, path) FROM files
+                 WHERE overexposed IS NULL ORDER BY id LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit, offset], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// How many files still need exposure analysis (progress total).
+    pub fn count_files_missing_exposure(&self) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM files WHERE overexposed IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    /// Store the exposure verdict (0/1) and mark the file analyzed.
+    pub fn update_reject_exposure(
+        &self,
+        id: i64,
+        over: bool,
+        under: bool,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE files SET overexposed=?1, underexposed=?2 WHERE id=?3",
+            params![over as i64, under as i64, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Store the eyes-closed verdict (semantic similarity > 0.11).
+    pub fn update_reject_eyes(&self, id: i64, closed: bool) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE files SET eyes_closed=?1 WHERE id=?2",
+            params![closed as i64, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Remove EVERY tag (text tags of any source AND color labels) from the
     /// given files — the multi-select "delete tags" action (C-15.1).
     pub fn clear_all_tags_on_files(&self, ids: &[i64]) -> Result<usize, String> {
@@ -1147,6 +1230,9 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
     let lens: Option<String> = row.get(11)?;
     let focal_length: Option<f64> = row.get(12)?;
     let rating: Option<i64> = row.get(13)?;
+    let overexposed: Option<i64> = row.get(14)?;
+    let underexposed: Option<i64> = row.get(15)?;
+    let eyes_closed: Option<i64> = row.get(16)?;
     let tags: Vec<String> = tags_raw
         .map(|s| s.split(',').map(|t| t.to_string()).collect())
         .unwrap_or_default();
@@ -1169,6 +1255,9 @@ fn map_file(row: &rusqlite::Row) -> SqliteResult<FileRecord> {
         lens,
         focal_length,
         rating,
+        overexposed,
+        underexposed,
+        eyes_closed,
     })
 }
 // Unit tests: path normalization, DB migration, scanner, tag search (ADD.md §11).

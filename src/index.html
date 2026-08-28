@@ -9,12 +9,12 @@
 <body>
   <div class="app">
     <nav class="sidebar sidebar--open" id="sidebar" aria-label="Menu">
-      <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos">📷<span class="sidebar__label" data-i18n="nav.photos">照片</span></button>
-      <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders">📁<span class="sidebar__label" data-i18n="nav.folders">目录</span></button>
-      <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags">🏷️<span class="sidebar__label" data-i18n="nav.tags">标签</span></button>
-      <button class="sidebar__btn" id="nav-rejects" data-i18n-title="nav.rejects" data-i18n-aria="nav.rejects">🗑️<span class="sidebar__label" data-i18n="nav.rejects">废片</span></button>
-      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings">⚙<span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
-      <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单">◀<span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
+      <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos"><span class="sidebar__icon">📷</span><span class="sidebar__label" data-i18n="nav.photos">照片</span></button>
+      <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders"><span class="sidebar__icon">📁</span><span class="sidebar__label" data-i18n="nav.folders">目录</span></button>
+      <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags"><span class="sidebar__icon">🏷️</span><span class="sidebar__label" data-i18n="nav.tags">标签</span></button>
+      <button class="sidebar__btn" id="nav-rejects" data-i18n-title="nav.rejects" data-i18n-aria="nav.rejects"><span class="sidebar__icon">🗑️</span><span class="sidebar__label" data-i18n="nav.rejects">废片</span></button>
+      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings"><span class="sidebar__icon">⚙</span><span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
+      <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单"><span class="sidebar__icon">◀</span><span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
     </nav>
 
     <main class="main">
@@ -256,6 +256,16 @@
       <div class="tagging-badge__fill" id="tagging-fill"></div>
     </div>
     <span class="tagging-badge__count" id="tagging-count"></span>
+  </div>
+
+  <!-- Reject-analysis progress badge (top-right, C-19.3): separate from the
+       tagging badge so users see exposure/eyes analysis is still running -->
+  <div class="tagging-badge reject-badge" id="reject-badge" hidden>
+    <span class="tagging-badge__title" data-i18n="rejects.analyzingTitle">正在分析废片条件</span>
+    <div class="tagging-badge__bar">
+      <div class="tagging-badge__fill" id="reject-fill"></div>
+    </div>
+    <span class="tagging-badge__count" id="reject-count"></span>
   </div>
 
   <!-- Self-update banner (top-center, C-18): hash comparison against

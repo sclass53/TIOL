@@ -124,7 +124,9 @@ export const MESSAGES = {
       "under": "欠曝",
       "over": "过曝",
       "eyes": "闭眼",
-      "clear": "清除"
+      "clear": "清除",
+      "analyzing": "分析曝光… {done}/{total}",
+      "analyzingTitle": "分析曝光"
     },
     "update": {
       "label": "更新",
@@ -316,7 +318,9 @@ export const MESSAGES = {
       "under": "Underexposed",
       "over": "Overexposed",
       "eyes": "Eyes closed",
-      "clear": "Clear"
+      "clear": "Clear",
+      "analyzing": "Analyzing Parameters… {done}/{total}",
+      "analyzingTitle": "Analyzing Parameters"
     },
     "update": {
       "label": "Updates",

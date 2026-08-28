@@ -208,6 +208,9 @@ els.navRejects.addEventListener("click", () => {
   // render runs before initI18n resolves (default en-US), so entering the
   // page must refresh them (C-19.1).
   renderRejectConds();
+  // Kick off the one-time metrics analysis (eyes/exposure; instant when
+  // everything is already cached in the DB).
+  ensureRejectAnalysis();
 });
 els.navSettings.addEventListener("click", () => { switchView("settings"); renderSettings(); });
 
@@ -643,7 +646,10 @@ function renderPhotos(photos) {
   // Queued entries reference cards from the previous render — drop them.
   thumbQueue.length = 0;
   if (!photos.length) {
-    currentGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() ? "photos.filterEmpty" : "photos.empty")}</div>`;
+    const rejectsActive =
+      !els.viewRejects.classList.contains("view--hidden") &&
+      activeRejectConds.size > 0;
+    currentGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() || rejectsActive ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
     return;
   }
@@ -1964,9 +1970,8 @@ async function loadRejects() {
   try {
     const photos = await invoke("get_photos", { folderId: null });
     allRejects = photos;
-    // Same filter pipeline as the photos view (colors/lens/focal/rating are
-    // shared); reject conditions are UI-only for now.
-    const shown = applyFilters(photos);
+    // Shared filters (colors/lens/focal/rating) ∩ reject conditions.
+    const shown = applyRejectConds(applyFilters(photos));
     const wasGrid = currentGrid;
     currentGrid = rejectGrid;
     renderPhotos(shown);
@@ -1992,7 +1997,7 @@ async function runRejectSearch() {
   try {
     const res = await invoke("search", { query: q, mode: "semantic" });
     allRejects = res;
-    const shown = applyFilters(res);
+    const shown = applyRejectConds(applyFilters(res));
     const wasGrid = currentGrid;
     currentGrid = rejectGrid;
     renderPhotos(shown);
@@ -2033,10 +2038,59 @@ els.btnColorFilterRejects.addEventListener("click", async (e) => {
   }
 });
 
-// Reject conditions (C-19): UI-only — selection state is kept and shown,
-// but does not filter yet (the AI detection comes in a later version).
+// Reject conditions (C-19.3): default ALL checked (user request); blur is
+// UI-only (not implemented), the other three filter the rejects grid. The
+// analysis (eyes-closed semantics + exposure pixels) runs once per library
+// and is cached in the DB (incremental for new files).
 const REJECT_CONDS = ["blur", "under", "over", "eyes"];
-const activeRejectConds = new Set();
+const activeRejectConds = new Set(["blur", "under", "over", "eyes"]);
+
+/// Filter by the checked reject conditions (UNION inside — any matched
+/// condition shows the photo; blur is skipped until implemented). Photos
+/// whose metric is still unknown (NULL) fail the condition (C-15 rule).
+function applyRejectConds(photos) {
+  if (!activeRejectConds.size) return photos;
+  return photos.filter((p) => {
+    for (const c of activeRejectConds) {
+      if (c === "blur") continue;
+      if (c === "over" && p.overexposed === 1) return true;
+      if (c === "under" && p.underexposed === 1) return true;
+      if (c === "eyes" && p.eyes_closed === 1) return true;
+    }
+    return false;
+  });
+}
+
+// Run the (incremental) analysis — called on startup warmup AND on every
+// entry to the rejects page; the backend dedupes concurrent runs and only
+// processes files whose metrics are still NULL, so repeated calls are cheap.
+async function ensureRejectAnalysis() {
+  try {
+    await invoke("compute_reject_metrics");
+  } catch (e) {
+    console.error(e);
+  }
+}
+const rejectBadge = document.getElementById("reject-badge");
+const rejectFill = document.getElementById("reject-fill");
+const rejectCount = document.getElementById("reject-count");
+listen("reject-analysis-progress", (ev) => {
+  const d = ev.payload || {};
+  if (d.total > 0) {
+    els.rejectStatus.textContent = t("rejects.analyzing", {
+      done: d.done,
+      total: d.total,
+    });
+    rejectBadge.hidden = false;
+    rejectCount.textContent = `${d.done}/${d.total}`;
+    rejectFill.style.width = `${Math.round((d.done / d.total) * 100)}%`;
+  }
+});
+listen("reject-analysis-complete", () => {
+  rejectBadge.hidden = true;
+  renderRejectStatus(0);
+  loadRejects();
+});
 
 function renderRejectConds() {
   els.rejectCondItems.textContent = "";
@@ -2054,6 +2108,14 @@ function renderRejectConds() {
         "searchbar__filter--active",
         activeRejectConds.size > 0
       );
+      // Re-filter now, and make sure the metrics exist for the checked
+      // conditions (eyes/exposure; blur has none yet).
+      if (els.viewRejects.classList.contains("view--hidden")) {
+        renderPhotos(applyFilters(allPhotos));
+      } else {
+        loadRejects();
+        ensureRejectAnalysis();
+      }
     });
     const span = document.createElement("span");
     span.textContent = t(`rejects.${c}`);
@@ -2262,4 +2324,8 @@ btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
   // Startup update check (C-18): deferred so it never races first paint;
   // dev builds short-circuit in the backend (debug_assertions).
   setTimeout(() => checkForUpdates(false), 2000);
+  // Reject-metrics warmup (C-19.3): start exposure/eyes analysis in the
+  // background right after startup so the rejects page is populated by the
+  // time the user visits it (progress badge shows while it runs).
+  setTimeout(() => ensureRejectAnalysis(), 5000);
 })();
