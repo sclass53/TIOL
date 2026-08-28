@@ -20,21 +20,25 @@ pub fn read_lens_focal(path: &std::path::Path) -> (Option<String>, Option<f64>) 
         Err(_) => return (None, None),
     };
 
-    // kamadak's display_value() wraps ASCII strings in quotes, e.g.
-    // `"EF50mm f/1.8 STM"` — strip them for storage/display. The "----"
-    // placeholder (cameras with no lens mounted) is treated as absent.
+    // LensModel (0xA434) is ASCII. Read the raw value directly instead of
+    // display_value(): some cameras/software write multiple ASCII values
+    // which display_value renders as `"a", "b"` (stray quotes/commas,
+    // C-15.3). Joining with a space keeps the name clean. The "----"
+    // placeholder (no lens mounted) is treated as absent.
     let lens = exif
         .get_field(Tag::LensModel, In::PRIMARY)
-        .map(|f| f.display_value().to_string())
-        .map(|s| {
-            let s = s.trim();
-            if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
-                s[1..s.len() - 1].to_string()
-            } else {
-                s.to_string()
+        .and_then(|f| match f.value {
+            Value::Ascii(ref v) if !v.is_empty() => {
+                let s: String = v
+                    .iter()
+                    .map(|b| String::from_utf8_lossy(b).trim().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                (!s.is_empty()).then_some(s)
             }
+            _ => None,
         })
-        .filter(|s| !s.is_empty() && s != "----");
+        .filter(|s| s != "----");
 
     let focal = exif
         .get_field(Tag::FocalLength, In::PRIMARY)

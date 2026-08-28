@@ -217,6 +217,14 @@ impl Db {
              UPDATE OR IGNORE folders SET path = lower(path) WHERE path != lower(path);
              UPDATE OR IGNORE files SET path = lower(path) WHERE path != lower(path);",
         )?;
+        // C-15.3: some cameras/software write LensModel as multi-value ASCII
+        // which parsed with stray quotes/commas ("a", "b"); Nikon-style
+        // fixed-width fields pad with trailing spaces. Idempotent cleanup:
+        // drop quotes, collapse comma-separated parts, trim everything.
+        conn.execute_batch(
+            "UPDATE files SET lens = TRIM(REPLACE(REPLACE(REPLACE(REPLACE(lens, '\"', ''), ',', ' '), '  ', ' '), '  ', ' '))
+             WHERE lens LIKE '%\"%' OR lens LIKE '%,%' OR lens != TRIM(lens);",
+        )?;
         Ok(())
     }
 
@@ -926,13 +934,17 @@ impl Db {
         Ok(out)
     }
 
-    /// Distinct lens names across the library (C-15 filter panel), sorted.
-    /// The "----" placeholder (cameras report "no lens mounted") is skipped.
+    /// Distinct lens names across the library (C-15 filter panel), sorted and
+    /// TRIMmed — fixed-width fields (Nikon) pad with trailing spaces which
+    /// must never leak into the picker. The "----" placeholder (cameras
+    /// report "no lens mounted") is skipped.
     pub fn get_lens_list(&self) -> Result<Vec<String>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT lens FROM files WHERE lens IS NOT NULL AND lens != '' AND lens != '----' ORDER BY lens",
+                "SELECT DISTINCT TRIM(lens) FROM files
+                 WHERE lens IS NOT NULL AND TRIM(lens) != '' AND TRIM(lens) != '----'
+                 ORDER BY TRIM(lens)",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -1439,6 +1451,34 @@ mod tests {
         let missing = db.get_files_missing_exif(100, 0).unwrap();
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].0, id);
+    }
+
+    #[test]
+    fn lens_quote_cleanup() {
+        use rusqlite::params;
+        // Legacy data written by the old display_value() path can carry
+        // stray quotes/commas ("a", "b") — the migrate step must clean it.
+        let (dir, db) = tmp_db();
+        let folder = tempfile::tempdir().unwrap();
+        let fid = db.add_folder(folder.path().to_str().unwrap()).unwrap();
+        std::fs::write(folder.path().join("a.jpg"), b"x").unwrap();
+        let _ = scanner::scan_folder(&db, fid, folder.path().to_str().unwrap()).unwrap();
+        let id = db.get_photos(Some(fid)).unwrap()[0].id;
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE files SET lens = '\"E 18-55mm\", \"F3.5\"   ' WHERE id=?1",
+                params![id],
+            )
+            .unwrap();
+        drop(db);
+        // Reopen triggers migrate() → cleanup (quotes, commas, trailing
+        // spaces — Nikon fixed-width LensModel style).
+        let db2 = Db::new(dir.path().join("test.sqlite")).unwrap();
+        let rec = db2.get_file_by_id(id).unwrap().unwrap();
+        assert_eq!(rec.lens.as_deref(), Some("E 18-55mm F3.5"));
+        assert_eq!(db2.get_lens_list().unwrap(), vec!["E 18-55mm F3.5".to_string()]);
     }
 
     #[test]

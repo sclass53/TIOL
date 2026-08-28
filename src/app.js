@@ -1907,8 +1907,11 @@ els.btnRefresh.addEventListener("click", async () => {
   }
 });
 
-// Tauri events: refresh on scan
+// Tauri events: refresh on scan (a scan may also add NEW lens names from
+// freshly added photos — drop the lens-list cache so the filter panel
+// re-fetches it next time it opens; C-15.4).
 listen("scan-complete", () => {
+  lensCache = null;
   markFoldersDirty();
   loadPhotos();
   loadFolders();

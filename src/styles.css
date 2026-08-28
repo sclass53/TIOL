@@ -140,7 +140,7 @@ html, body {
    blue, only a subtle inner ring marks it. */
 .btn.searchbar__select {
   flex: 0 0 auto;
-  height: 32px;
+  height: 36px; /* matches the search inputs */
   background: var(--accent);
   border: 1px solid var(--accent);
   color: #fff;
@@ -156,8 +156,9 @@ html, body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
-/* Color filter button at the LEFT end of the search bar (C-14) */
-.searchbar__filter {
+/* Color filter button (C-14) — same height as the search inputs; .btn's
+   32px would otherwise win (later definition, equal specificity). */
+.btn.searchbar__filter {
   flex: 0 0 auto;
   height: 36px;
   padding: 0 10px;
