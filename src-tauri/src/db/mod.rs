@@ -1051,6 +1051,14 @@ impl Db {
         Ok(())
     }
 
+    /// Delete a file row (C-19.10) — file_tags / color_tags cascade via FK.
+    pub fn delete_file(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM files WHERE id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Remove EVERY tag (text tags of any source AND color labels) from the
     /// given files — the multi-select "delete tags" action (C-15.1).
     pub fn clear_all_tags_on_files(&self, ids: &[i64]) -> Result<usize, String> {

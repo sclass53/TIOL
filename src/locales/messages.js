@@ -46,6 +46,11 @@ export const MESSAGES = {
       "rateSelected": "评分",
       "rateTitle": "应用星数",
       "rated": "已为 {count} 张评分",
+      "exportSelected": "导出",
+      "exported": "已导出 {count} 张照片",
+      "deleteSelected": "删除",
+      "deleteConfirm": "从磁盘永久删除选中的 {count} 张照片？此操作不可恢复。",
+      "deleted": "已删除 {count} 张照片",
       "filterColor": "颜色筛选",
       "filterBtn": "筛选",
       "filterClear": "清除",
@@ -73,7 +78,8 @@ export const MESSAGES = {
       "yellow": "黄色",
       "green": "绿色",
       "blue": "蓝色",
-      "purple": "紫色"
+      "purple": "紫色",
+      "reject": "废片"
     },
     "folders": {
       "empty": "尚未添加目录",
@@ -124,6 +130,7 @@ export const MESSAGES = {
       "under": "欠曝",
       "over": "过曝",
       "eyes": "闭眼",
+      "rejected": "已标记为废片",
       "clear": "清除",
       "analyzing": "分析曝光… {done}/{total}",
       "analyzingTitle": "分析曝光"
@@ -178,6 +185,9 @@ export const MESSAGES = {
       "language": "语言",
       "languageZh": "中文",
       "languageEn": "English",
+      "effects": "特效",
+      "fxAnim": "动画",
+      "fxShadow": "阴影",
       "hwDecode": "硬件加速解码",
       "hwDecodeHint": "更改后需重启应用生效",
       "restart": "重启应用",
@@ -247,6 +257,11 @@ export const MESSAGES = {
       "rateSelected": "Rate",
       "rateTitle": "Apply star rating",
       "rated": "{count} photos rated",
+      "exportSelected": "Export",
+      "exported": "{count} photos exported",
+      "deleteSelected": "Delete",
+      "deleteConfirm": "Permanently delete the {count} selected photos from disk? This cannot be undone.",
+      "deleted": "{count} photos deleted",
       "filterColor": "Color filter",
       "filterBtn": "Filter",
       "filterClear": "Clear",
@@ -274,7 +289,8 @@ export const MESSAGES = {
       "yellow": "Yellow",
       "green": "Green",
       "blue": "Blue",
-      "purple": "Purple"
+      "purple": "Purple",
+      "reject": "Rejected"
     },
     "folders": {
       "empty": "No folders added yet",
@@ -325,6 +341,7 @@ export const MESSAGES = {
       "under": "Underexposed",
       "over": "Overexposed",
       "eyes": "Eyes closed",
+      "rejected": "Marked as reject",
       "clear": "Clear",
       "analyzing": "Analyzing Parameters… {done}/{total}",
       "analyzingTitle": "Analyzing Parameters"
@@ -379,6 +396,9 @@ export const MESSAGES = {
       "language": "Language",
       "languageZh": "中文",
       "languageEn": "English",
+      "effects": "Effects",
+      "fxAnim": "Animation",
+      "fxShadow": "Shadows",
       "hwDecode": "Hardware decoding",
       "hwDecodeHint": "Restart the app for the change to take effect",
       "restart": "Restart App",

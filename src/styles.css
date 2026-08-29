@@ -97,20 +97,21 @@ html, body {
   display: inline-block;
 }
 
-/* Active indicator bar: at the sidebar edge when collapsed, at the button
-   edge when expanded (the collapsed offset would clip outside). */
-.sidebar__btn--active::before {
-  content: "";
-  position: absolute;
-  left: -8px;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  background: var(--accent);
-  border-radius: 2px;
+/* Active indicator bar: a dedicated element that GLIDES between nav buttons
+   (transform transition) — visible in both collapsed/expanded states. */
+.sidebar {
+  position: relative;
 }
-.sidebar--open .sidebar__btn--active::before {
+.sidebar__indicator {
+  position: absolute;
   left: 0;
+  top: 0;
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: transform 0.25s ease;
+  pointer-events: none;
 }
 
 /* Collapse/expand toggle at the bottom of the sidebar */
@@ -171,6 +172,7 @@ html, body {
   border-bottom: 1px solid var(--separator);
   display: flex;
   gap: 8px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32); /* FX shadow (C-19.11) */
 }
 
 .searchbar__input {
@@ -393,6 +395,30 @@ html, body {
   width: 18px;
   height: 18px;
 }
+/* Reject marker (C-19.10): a circle with an X — no fill, distinct from the
+   solid color dots. */
+.color-dot--reject {
+  position: relative;
+  background: transparent !important;
+  border: 2px solid #ff453a;
+}
+.color-dot--reject::before,
+.color-dot--reject::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60%;
+  height: 2px;
+  background: #ff453a;
+  border-radius: 1px;
+}
+.color-dot--reject::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.color-dot--reject::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
 .color-dot--filter.color-dot--on {
   box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--accent);
 }
@@ -426,6 +452,69 @@ html, body {
   border-radius: 50%;
   display: inline-block;
 }
+/* Reject marker on cards: tiny circle with an X (C-19.10) */
+.card__color--reject {
+  position: relative;
+  background: transparent;
+  border: 1.5px solid #ff453a;
+  box-sizing: border-box;
+}
+.card__color--reject::before,
+.card__color--reject::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 1.5px;
+  background: #ff453a;
+}
+.card__color--reject::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.card__color--reject::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* Reject badge pinned to the thumbnail's TOP-RIGHT corner (C-19.10) —
+   distinct from the meta-row color dots. In select mode it shifts DOWN so
+   the multi-select checkbox (same corner) never covers it. */
+.card__reject {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid #ff453a;
+  z-index: 3;
+  pointer-events: none;
+  transition: top 0.15s ease;
+}
+.grid.selecting .card__reject {
+  top: 32px;
+}
+.card__reject::before,
+.card__reject::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60%;
+  height: 2px;
+  background: #ff453a;
+  border-radius: 1px;
+}
+.card__reject::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.card__reject::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+.card__reject[hidden] {
+  display: none;
+}
 
 /* Photo grid */
 .grid {
@@ -451,6 +540,7 @@ html, body {
   /* Offscreen cards skip layout/paint (WebView2/Chromium) — big win for large grids */
   content-visibility: auto;
   contain-intrinsic-size: 180px 184px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); /* FX shadow (C-19.11) */
 }
 
 .card:hover { border-color: var(--accent); }
@@ -526,9 +616,10 @@ html, body {
   opacity: 0.85;
 }
 
-/* Rubber-band drag selection box (C-13) */
+/* Rubber-band drag selection box (C-13) — fixed viewport positioning so it
+   always tracks the cursor exactly (C-19.10). */
 .selection-box {
-  position: absolute;
+  position: fixed;
   z-index: 50;
   border: 1px dashed var(--accent);
   background: rgba(10, 132, 255, 0.12);
@@ -748,6 +839,14 @@ html, body {
 .selection-bar[hidden] {
   display: none;
 }
+
+/* Secondary pill (delete-tags / export / cancel) anchored bottom-RIGHT —
+   slightly off the edge so it doesn't hug the scrollbar (C-19.10). */
+.selection-bar--secondary {
+  left: auto;
+  right: 72px;
+  transform: none;
+}
 .selection-bar__count {
   color: var(--text-primary);
   font-size: 13px;
@@ -874,6 +973,16 @@ html, body {
 .settings__langs {
   display: flex;
   gap: 8px;
+}
+
+/* Effects row (C-19.11): two switches side by side */
+.settings__fx {
+  display: flex;
+  gap: 8px;
+}
+.settings__fx-state {
+  margin-left: 6px;
+  opacity: 0.9;
 }
 
 .settings__hint {
@@ -1388,4 +1497,30 @@ html[data-theme="light"] .preview-overlay {
 /* Card AI-score badge stays dark-on-light for contrast */
 html[data-theme="light"] .card__score {
   background: rgba(0, 0, 0, 0.72);
+}
+
+/* ---------------------------------------------------------------------------
+   FX toggles (C-19.11) — driven by the settings switches, default ON.
+   `body.fx-*-off` wins over the light-theme overrides above by equal-or-higher
+   specificity + being last. Future animations join .fx-anim-off. */
+html[data-theme="light"] .searchbar {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+html[data-theme="light"] .card {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.16);
+}
+
+body.fx-anim-off .sidebar__indicator {
+  transition: none;
+}
+
+body.fx-shadow-off .searchbar,
+body.fx-shadow-off .card,
+body.fx-shadow-off .selection-bar,
+body.fx-shadow-off .color-filter,
+body.fx-shadow-off .toast,
+body.fx-shadow-off .update-banner,
+body.fx-shadow-off .tagging-badge,
+body.fx-shadow-off .onboarding-bubble {
+  box-shadow: none;
 }

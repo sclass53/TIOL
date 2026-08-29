@@ -771,7 +771,7 @@ fn toggle_color_tag(
     file_ids: Vec<i64>,
     color: String,
 ) -> Result<bool, String> {
-    const COLORS: [&str; 6] = ["red", "orange", "yellow", "green", "blue", "purple"];
+    const COLORS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "reject"];
     if !COLORS.contains(&color.as_str()) {
         return Err(format!("invalid color: {color}"));
     }
@@ -780,6 +780,78 @@ fn toggle_color_tag(
     }
     log::info!("toggle_color_tag: {} files, color={}", file_ids.len(), color);
     state.db.toggle_color_tag(&file_ids, &color)
+}
+
+/// Multi-select "Export" (C-19.10): copy the selected photos into a chosen
+/// destination folder. Name collisions get a numeric suffix. Returns the
+/// number of files copied.
+#[tauri::command]
+fn export_files(
+    state: tauri::State<AppState>,
+    file_ids: Vec<i64>,
+    dest_dir: String,
+) -> Result<usize, String> {
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    let dest = std::path::PathBuf::from(&dest_dir);
+    if !dest.is_dir() {
+        return Err(format!("destination is not a folder: {dest_dir}"));
+    }
+    let mut copied = 0usize;
+    for id in &file_ids {
+        let rec = state
+            .db
+            .get_file_by_id(*id)?
+            .ok_or_else(|| "file not found".to_string())?;
+        let src = std::path::Path::new(&rec.path);
+        if !src.is_file() {
+            log::warn!("export: source missing: {}", rec.path);
+            continue;
+        }
+        // Collision-safe destination name: name, name (1), name (2), ...
+        let stem = std::path::Path::new(&rec.filename);
+        let base = stem.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let ext = stem.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let mut name = rec.filename.clone();
+        let mut i = 1usize;
+        let mut out = dest.join(&name);
+        while out.exists() {
+            name = format!("{base} ({i}){ext}");
+            out = dest.join(&name);
+            i += 1;
+        }
+        if let Err(e) = std::fs::copy(src, &out) {
+            log::warn!("export: copy failed for {}: {e}", rec.path);
+            continue;
+        }
+        copied += 1;
+    }
+    log::info!("export_files: copied {copied} files to {dest_dir}");
+    Ok(copied)
+}
+
+/// Multi-select "Delete" (C-19.10, rejects page only): PERMANENTLY remove the
+/// selected photos from disk AND the library. The frontend confirms first.
+#[tauri::command]
+fn delete_files(state: tauri::State<AppState>, file_ids: Vec<i64>) -> Result<usize, String> {
+    if file_ids.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    let mut deleted = 0usize;
+    for id in &file_ids {
+        if let Ok(Some(rec)) = state.db.get_file_by_id(*id) {
+            if let Err(e) = std::fs::remove_file(std::path::Path::new(&rec.path)) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("delete: remove failed for {}: {e}", rec.path);
+                }
+            }
+        }
+        state.db.delete_file(*id)?;
+        deleted += 1;
+    }
+    log::info!("delete_files: removed {deleted} files");
+    Ok(deleted)
 }
 
 /// Manual "AI Tagging" (C-12): the ONLY way tagging starts. Enqueues a
@@ -1456,6 +1528,8 @@ fn main() {
             add_tags_to_files,
             clear_tags_from_files,
             toggle_color_tag,
+            export_files,
+            delete_files,
             run_ai_tagging,
             clear_all_tags,
             get_ai_status,

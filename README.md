@@ -1,6 +1,5 @@
 <!-- Language Switcher -->
-[![中文](https://img.shields.io/badge/中文-README-blue.svg)](README.zh.md)
-[![English](https://img.shields.io/badge/English-README-blue.svg)](README.md)
+English | [中文](README.zh.md)
 
 # TIOL — AI Local Photo Manager
 
@@ -15,9 +14,9 @@ All photos stay on your own hard drive. AI inference runs completely offline. No
 ## Features
 
 - 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML，etc.
+- 🔍 **Dual‑path Search**: **Semantic search** (describe what you're looking for, e.g., *"a cup of coffee"*) + **Tag search** (fast)
 - 📷 **Lens/Focal length filtering**: Filter the photos through specifying the lens/the focal length.
 - 📁 **Directory Management**: Add/remove photo directories, file system monitoring (new/modified files are automatically queued for processing)
-- 🔍 **Dual‑path Search**: **Semantic search** (describe what you're looking for, e.g., *"a cup of coffee"*) + **Tag search** (fast)
 - 🏷️ **Custom Labels**: AI tagging – enter any labels (Chinese or English) in the Tags tab; files are indexed automatically on changes.
 - 🖥️ **AI Engine Options**: auto / GPU / CPU / Apple CoreML (macOS native Neural Engine acceleration) – fully local
 - 🔒 **Model Lockdown**: SHA256 checksum + resumable downloads + fallback to domestic mirrors, auto‑repair for corrupted models
@@ -47,3 +46,15 @@ On first launch, the AI model (~412 MB) will be downloaded automatically (mirror
 - AI models:  
   Windows: `%LOCALAPPDATA%\com.tiol.desktop\models`  
   macOS: `~/Library/Caches/com.tiol.desktop/models`
+
+## Contributing
+
+This project is iterating quickly; issues and pull requests (as long as they are reasonable) are welcomed.
+
+## Special Thanks
+
+Thanks to [Ken709-mp4](https://github.com/Ken709-mp4) for providing image examples,patches, and ideas.
+
+Thanks to [DiegoTang](https://github.com/DiegoTang) for providing image examples and ideas.
+
+[👉Link To Their Site](https://mnfilm.netlify.app)

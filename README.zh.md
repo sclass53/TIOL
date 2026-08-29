@@ -1,6 +1,5 @@
 <!-- Language Switcher -->
-[![中文](https://img.shields.io/badge/中文-README-blue.svg)](README.zh.md)
-[![English](https://img.shields.io/badge/English-README-blue.svg)](README.md)
+[English](README.md) | 中文
 
 # TIOL — AI Local Photo Manager
 
@@ -15,9 +14,9 @@
 ## 功能
 
 - 💻 **多平台支持**: 支持Windows, MacOS, 和Linux. 支持英伟达 CUDA, cpu, 苹果 CoreML, 等等
+- 🔍 **双路径搜索**：**语义搜索**（描述要找的内容，如 "a cup of coffee"）+ **标签搜索**（快速）
 - 📷 **基于镜头分类**: 筛选不同镜头、不同焦段下拍摄的照片。
 - 📁 **目录管理**：添加/移除照片目录，文件系统监控（新增/修改自动入队处理）
-- 🔍 **双路径搜索**：**语义搜索**（描述要找的内容，如 "a cup of coffee"）+ **标签搜索**（快速）
 - 🏷️ **自定义标签**：AI 打标——在“标签”页输入任意标签（中英文均可）；文件变更自动索引.
 - 🖥️ **AI 引擎可选**：auto / GPU / CPU / Apple CoreML（Neural Engine 原生加速），全本地运行
 - 🔒 **模型锁定**：SHA256 校验 + 断点续传 + 国内镜像回退，模型损坏自动修复
@@ -42,3 +41,15 @@ cargo tauri build      # 发布构建（Windows 生成 msi/nsis，macOS 生成 .
 
 - 数据库/缩略图：Windows `%APPDATA%\com.tiol.desktop`；macOS `~/Library/Application Support/com.tiol.desktop`
 - AI 模型：Windows `%LOCALAPPDATA%\com.tiol.desktop\models`；macOS `~/Library/Caches/com.tiol.desktop/models`
+
+## 贡献
+
+项目正在快速迭代; 随时欢迎合理的issue和合并请求。
+
+## 特别感谢
+
+感谢[Ken709-mp4](https://github.com/Ken709-mp4)提供照片素材和代码补丁，以及未来展望。
+
+感谢[DiegoTang](https://github.com/DiegoTang)提供照片素材和部分修改建议。
+
+[👉查看他们的链接](https://mnfilm.netlify.app)

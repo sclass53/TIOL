@@ -43,6 +43,11 @@
     "rateSelected": "Rate",
     "rateTitle": "Apply star rating",
     "rated": "{count} photos rated",
+    "exportSelected": "Export",
+    "exported": "{count} photos exported",
+    "deleteSelected": "Delete",
+    "deleteConfirm": "Permanently delete the {count} selected photos from disk? This cannot be undone.",
+    "deleted": "{count} photos deleted",
     "filterColor": "Color filter",
     "filterBtn": "Filter",
     "filterClear": "Clear",
@@ -70,7 +75,8 @@
     "yellow": "Yellow",
     "green": "Green",
     "blue": "Blue",
-    "purple": "Purple"
+    "purple": "Purple",
+    "reject": "Rejected"
   },
   "folders": {
     "empty": "No folders added yet",
@@ -121,6 +127,7 @@
     "under": "Underexposed",
     "over": "Overexposed",
     "eyes": "Eyes closed",
+    "rejected": "Marked as reject",
     "clear": "Clear",
     "analyzing": "Analyzing Parameters… {done}/{total}",
     "analyzingTitle": "Analyzing Parameters"
@@ -175,6 +182,9 @@
     "language": "Language",
     "languageZh": "中文",
     "languageEn": "English",
+    "effects": "Effects",
+    "fxAnim": "Animation",
+    "fxShadow": "Shadows",
     "hwDecode": "Hardware decoding",
     "hwDecodeHint": "Restart the app for the change to take effect",
     "restart": "Restart App",

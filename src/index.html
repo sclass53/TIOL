@@ -9,11 +9,12 @@
 <body>
   <div class="app">
     <nav class="sidebar sidebar--open" id="sidebar" aria-label="Menu">
+      <div class="sidebar__indicator" id="sidebar-indicator"></div>
       <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos"><span class="sidebar__icon">📷</span><span class="sidebar__label" data-i18n="nav.photos">照片</span></button>
       <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders"><span class="sidebar__icon">📁</span><span class="sidebar__label" data-i18n="nav.folders">目录</span></button>
       <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags"><span class="sidebar__icon">🏷️</span><span class="sidebar__label" data-i18n="nav.tags">标签</span></button>
       <button class="sidebar__btn" id="nav-rejects" data-i18n-title="nav.rejects" data-i18n-aria="nav.rejects"><span class="sidebar__icon">🗑️</span><span class="sidebar__label" data-i18n="nav.rejects">废片</span></button>
-      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings"><span class="sidebar__icon">⚙</span><span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
+      <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings"><span class="sidebar__icon">⚙️</span><span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
       <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单"><span class="sidebar__icon">◀</span><span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
     </nav>
 
@@ -22,11 +23,12 @@
       <section class="view" id="view-photos">
         <div class="searchbar">
           <input class="searchbar__input" id="search-input" type="text" data-i18n-placeholder="search.name.placeholder" />
-          <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
           <select class="searchbar__mode" id="search-mode" title="">
             <option value="semantic" data-i18n="search.mode.semantic">语义搜索</option>
             <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
           </select>
+          <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
+          <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
           <select class="searchbar__mode" id="rating-filter" data-i18n-title="photos.ratingFilter">
             <option value="0" data-i18n="photos.ratingAll">全部</option>
             <option value="1" data-i18n="photos.rating1">≥ 1 星</option>
@@ -35,18 +37,9 @@
             <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
             <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
           </select>
-          <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="photo-grid"></div>
-        <div class="selection-bar" id="selection-bar" hidden>
-          <span class="selection-bar__count" id="selection-count"></span>
-          <span class="selection-bar__dots" id="selection-color-dots"></span>
-          <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
-          <button class="btn btn--ghost" id="btn-selection-rate" data-i18n="photos.rateSelected" disabled>评分</button>
-          <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
-          <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
-        </div>
         <div class="statusbar" id="photo-status">0 photos</div>
       </section>
 
@@ -85,6 +78,7 @@
            UI instead of the semantic/tag mode; conditions are UI-only for now -->
       <section class="view view--hidden" id="view-rejects">
         <div class="searchbar">
+          <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-rejects" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
           <button class="btn btn--ghost searchbar__filter" id="btn-reject-cond" data-i18n="rejects.cond">废片条件</button>
           <select class="searchbar__mode" id="rating-filter-rejects" data-i18n-title="photos.ratingFilter">
@@ -95,7 +89,6 @@
             <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
             <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
           </select>
-          <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode-rejects" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="reject-grid"></div>
@@ -112,13 +105,24 @@
               <button class="btn btn--ghost" data-lang="zh-CN" data-i18n="settings.languageZh">中文</button>
               <button class="btn btn--ghost" data-lang="en-US" data-i18n="settings.languageEn">English</button>
             </div>
-                      <div class="settings__row">
+          </div>
+          <div class="settings__row">
             <span class="settings__label" data-i18n="settings.theme">主题</span>
             <div class="settings__langs" id="theme-options">
               <button class="btn btn--ghost" data-theme="dark" data-i18n="settings.themeDark">深色</button>
               <button class="btn btn--ghost" data-theme="light" data-i18n="settings.themeLight">浅色</button>
             </div>
           </div>
+          <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.effects">特效</span>
+            <div class="settings__fx">
+              <button class="btn btn--ghost" id="toggle-fx-anim" title="">
+                <span data-i18n="settings.fxAnim">动画</span><span class="settings__fx-state" id="fx-anim-state" data-i18n="settings.on">开</span>
+              </button>
+              <button class="btn btn--ghost" id="toggle-fx-shadow" title="">
+                <span data-i18n="settings.fxShadow">阴影</span><span class="settings__fx-state" id="fx-shadow-state" data-i18n="settings.on">开</span>
+              </button>
+            </div>
           </div>
           <div class="settings__row">
             <span class="settings__label" data-i18n="settings.hwDecode">硬件加速解码</span>
@@ -157,6 +161,22 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Multi-select bottom bars (C-13/C-19.10): OUTSIDE the view sections —
+       a hidden view would otherwise hide these fixed-position pills, so the
+       rejects page never showed them (C-19.11). -->
+  <div class="selection-bar" id="selection-bar" hidden>
+    <span class="selection-bar__count" id="selection-count"></span>
+    <span class="selection-bar__dots" id="selection-color-dots"></span>
+    <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+    <button class="btn btn--ghost" id="btn-selection-rate" data-i18n="photos.rateSelected" disabled>评分</button>
+    <button class="btn btn--danger" id="btn-selection-delete" data-i18n="photos.deleteSelected" disabled hidden>删除</button>
+  </div>
+  <div class="selection-bar selection-bar--secondary" id="selection-bar-secondary" hidden>
+    <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
+    <button class="btn btn--ghost" id="btn-selection-export" data-i18n="photos.exportSelected" disabled>导出</button>
+    <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
   </div>
 
   <!-- Image preview (modal, right panel) -->

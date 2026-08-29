@@ -3,6 +3,55 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.11 · 2025-08 — 设置页特效开关（动画 / 阴影）+ 多选 pill 跨页修复
+
+**需求**：① 设置里 language 和主题拆成两行；② 下方新增一行「特效」，可开关「动画」和「阴影」（一行两个开关），默认开启；③ 废片页多选不显示底部 pill；④ 主页开多选后切到废片页，第一次点击"多选"是退出而非进入——切页时应退出多选；⑤ 废片页删除照片后一瞬间闪现全部照片；⑥ 废片删除后不应退出多选模式。
+
+**实现**：
+
+1. **布局修复**：language 与 theme 两个 `settings__row` 原本嵌套错乱（theme 嵌在 language 行内）——拆成两个独立行。
+2. **特效行**：`settings__fx` 一行两个开关「动画」「阴影」，按钮文本「动画：开/关」「阴影：开/关」，点击切换 + `btn--active` 高亮。
+3. **阴影开关**（`body.fx-shadow-off`）：关闭顶部搜索栏、照片卡片、多选栏、筛选面板、toast、更新横幅、打标徽章、新手气泡的 box-shadow。搜索栏/卡片此前无阴影，默认补上细微阴影（深色 `0 2px 8px` / `0 1px 4px`，浅色更淡），让开关有实际效果。
+4. **动画开关**（`body.fx-anim-off`）：关闭侧边栏指示条滑动动画；未来新增动画统一挂到该类名下。
+5. **持久化**：localStorage（`tiol-fx-anim` / `tiol-fx-shadow`，与主题一致），缺省即开启；boot 时应用，设置页 `renderSettings` 刷新状态显示。
+6. **多选 pill 跨页修复（根因）**：两个 selection-bar 原本嵌在 `view-photos` section 内部——切到废片页时该 section `display:none`，fixed 定位的 pill 随祖先隐藏，废片页永远看不到。已移到 body 层级（main 之外），任何视图下都显示。
+7. **切页退出多选**：`switchView` 记录切换前的可见视图，从照片/废片页切走时 `setSelectMode(false)`（重复点击当前页导航不退出）。`setSelectMode` 同步照片页/废片页两个"多选"按钮的文本与高亮；退出时同时清理两个 grid 的 `selecting` 类与卡片勾选状态（switchView 可能已切换 currentGrid）。
+8. **废片页删除闪烁（根因）**：`loadPhotos()` 直接渲染到 `currentGrid`——从废片页触发刷新时（删除/scan-complete），全量照片被画进废片网格，随后 `loadRejects()` 才覆盖，造成"所有照片闪现"。修复：`loadPhotos()` 固定临时切换渲染到 photoGrid；删除 handler 与 scan-complete 中 `loadPhotos`/`loadRejects` 改为 `await` 串行执行。
+9. **删除后保持多选**：删除 handler 不再 `setSelectMode(false)`；从 `selectedIds` 移除已删除 id，重渲染后 `applySelectionToGrid(rejectGrid)` 重新标记选中卡片并刷新计数——可连续删除多批。
+10. **顺手修复**：废片页星数筛选分支缺 `applyRejectConds`（会显示全部照片）——已补。
+11. **i18n**：`settings.effects / fxAnim / fxShadow`（中英同步），messages.js 重新生成。
+
+## C-19.10 · 2025-08 — 侧边栏指示条动画 + 滚动位置保持 + 多选栏双 pill
+
+**需求**：① 左侧蓝条上下移动动画；② 强制刷新（添加/删除 tag 等）把页面滚回最上面——修复；③ 右侧三个按钮排序为「删除标签」「导出」「取消」，并单独拉出来开一个 pill。
+
+**实现**：
+
+1. **侧边栏指示条动画**：新增 `.sidebar__indicator`（3px 竖条，绝对定位在 sidebar 内），`transform: translateY` + `transition .25s` 实现上下滑动；`updateSidebarIndicator()` 读取 `.sidebar__btn--active` 的 offsetTop+6 定位，在切换视图、语言切换时调用。启动时 boot 流程直接同步定位（关过渡防滑入动画）——启动路径不经过 switchView，否则蓝条会停在左上角（相机图标上方）。
+2. **滚动位置保持**：`renderPhotos(photos, opts)` 默认保留 scrollTop；需要回顶的场景显式传 `{scrollTop: 0}`（语义搜索两个分支、切换文件夹 `loadPhotos(f.id, {scrollTop:0})`）。
+   - **坑（第一版失效）**：先清空网格再设 scrollTop 会被浏览器钳制为 0——必须**先渲染内容、再恢复滚动**；初始 chunk 短于目标位置时循环 `scrollToViewport()` 补渲染并重施目标值，直到位置真正落定。
+   - 深滚动恢复时缩略图入队只覆盖恢复位置附近的视口窗口（`offsetTop` 过滤），避免顶部几百张卡先占满队列、可见区域饿死。
+   - 添加/删除标签、X 标签、评分、颜色标签等强制重渲染不再把页面弹回顶部。
+3. **多选栏双 pill**：主栏（数量、色点、添加标签、评分、删除文件——仅废片页显示）保持底部居中；新增 `.selection-bar--secondary` 锚定底部右侧（`left:auto; right:72px`，不贴右缘/滚动条），按钮顺序「删除标签」「导出」「取消」。对话框打开时两栏一起隐藏（`setSelectionBarVisible`）。
+4. **X 徽章防遮挡**：废片 X 徽章固定在卡片右上角（`.card__reject` 红圈白 X，`transition: top .15s`）；进入多选模式时下移 `top:32px`（`.grid.selecting .card__reject`），不覆盖勾选框。颜色切换/清除标签后强制重渲染，徽章实时刷新。
+5. **导出 / 删除文件**：多选栏新增「导出」（复制到所选目录，重名自动加 " (n)" 后缀）与「删除文件」（仅废片页显示 + 确认对话框）——后端 `export_files` / `delete_files` + `db::delete_file`。
+6. **设置图标**：齿轮改用 `⚙️`（VS16 变体），emoji 尺寸下显示更合适。
+
+## C-19.9 · 2025-08 — 提示浮层动态定位 + 各页面筛选独立 + 面板夹紧
+
+**实现**：
+
+1. **提示浮层动态定位**：`showSelectionHint` 创建的 toast 实时测量底栏位置（`getBoundingClientRect`），定位在底栏正上方——任何底栏高度都不会被遮挡（取代之前固定 bottom 值）。
+2. **筛选面板夹紧视口**：`positionPanel(panel, btn)` 面板超出窗口时自动夹紧回可视范围内（全屏/窗口缩小时不跑出屏幕）。
+3. **拖选框 fixed 定位**：`.selection-box` 改为 `position:fixed`，用视口坐标绘制，滚动/全屏时不再与光标偏移。
+4. **各页面筛选独立**：`clearSharedFilters` 切换页面时清掉不适用该页的筛选状态；`lastGridView` 记住照片页网格视图。
+
+## C-19.8 · 2025-08 — EXIF 异步回填（镜头/焦距）
+
+**需求**：扫描时提取 EXIF 导致添加文件夹明显变慢。
+
+**实现**：扫描流程不再提取 EXIF（添加文件夹恢复速度）；新增 `spawn_exif_backfill(db)` 后台线程，在启动 / 添加文件夹 / 扫描完成 / 文件监控扫描后增量补填镜头、焦距等 EXIF 列（只处理未提取的文件）；`exif_columns_roundtrip` 测试改为断言文件保持"待回填"状态。
+
 ## C-19.7 · 2025-08 — 启动首屏填充修复 + 首次安装新手教程
 
 **需求**：① 启动时只显示 20+ 张照片，切换页面后才有全部（bug）；② 首次安装显示分步新手教程（仅第一次，更新不再显示）：1 左下角箭头（展开/收起菜单）→ 2 文件夹图标 → 3 添加文件夹 → 4 主页面按钮引导点击 → 5 右上角进度条（等待后可搜索）→ 6 垃圾桶（废片筛选）结束。

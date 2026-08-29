@@ -43,6 +43,10 @@ const els = {
   viewSettings: document.getElementById("view-settings"),
   langOptions: document.getElementById("lang-options"),
   themeOptions: document.getElementById("theme-options"),
+  toggleFxAnim: document.getElementById("toggle-fx-anim"),
+  toggleFxShadow: document.getElementById("toggle-fx-shadow"),
+  fxAnimState: document.getElementById("fx-anim-state"),
+  fxShadowState: document.getElementById("fx-shadow-state"),
   toggleHwDecode: document.getElementById("toggle-hw-decode"),
   hwDecodeHint: document.getElementById("hw-decode-hint"),
   btnRestart: document.getElementById("btn-restart"),
@@ -69,9 +73,12 @@ const els = {
   semanticSearchInput: document.getElementById("semantic-search-input"),
   btnSelectMode: document.getElementById("btn-select-mode"),
   selectionBar: document.getElementById("selection-bar"),
+  selectionBarSecondary: document.getElementById("selection-bar-secondary"),
   selectionCount: document.getElementById("selection-count"),
   btnSelectionTag: document.getElementById("btn-selection-tag"),
   btnSelectionRate: document.getElementById("btn-selection-rate"),
+  btnSelectionExport: document.getElementById("btn-selection-export"),
+  btnSelectionDelete: document.getElementById("btn-selection-delete"),
   btnSelectionClearTags: document.getElementById("btn-selection-clear-tags"),
   btnSelectionCancel: document.getElementById("btn-selection-cancel"),
   tagpickOverlay: document.getElementById("tagpick-overlay"),
@@ -141,6 +148,10 @@ sidebarToggle.addEventListener("click", () => {
 }
 
 function switchView(name) {
+  // Capture pre-switch visibility — the hidden classes flip below, and the
+  // "leaving a grid" check must reason about where we came FROM (C-19.11).
+  const prevPhotosVisible = !els.viewPhotos.classList.contains("view--hidden");
+  const prevRejectsVisible = !els.viewRejects.classList.contains("view--hidden");
   const isPhotos = name === "photos";
   const isFolders = name === "folders";
   const isTags = name === "tags";
@@ -169,10 +180,24 @@ function switchView(name) {
     clearSharedFilters();
   }
   if (isPhotos || isRejects) lastGridView = isPhotos ? "photos" : "rejects";
-  // Leaving a photo grid exits multi-select mode (C-13/C-19).
-  if (!isPhotos && !isRejects && selectMode) setSelectMode(false);
+  // Leaving a photo grid exits multi-select mode (C-19.11): the mode is
+  // page-bound — photos and rejects each have their own select button, and
+  // carrying the mode across pages made the first click on the other page
+  // act as "cancel" instead of entering select mode.
+  const leavingGrid =
+    (prevPhotosVisible && !isPhotos) || (prevRejectsVisible && !isRejects);
+  if (leavingGrid && selectMode) setSelectMode(false);
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos || isRejects) requestAnimationFrame(fillGridIfNeeded);
+  requestAnimationFrame(updateSidebarIndicator);
+}
+
+/// Slide the active-indicator bar to the currently active nav button (C-19.10).
+function updateSidebarIndicator() {
+  const ind = document.getElementById("sidebar-indicator");
+  const active = document.querySelector(".sidebar__btn--active");
+  if (!ind || !active) return;
+  ind.style.transform = `translateY(${active.offsetTop + 6}px)`;
 }
 let lastGridView = "photos";
 
@@ -215,6 +240,36 @@ els.themeOptions.addEventListener("click", (ev) => {
   try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
   renderThemeButtons();
 });
+
+// --- FX toggles (C-19.11): animations / shadows — localStorage, default ON ---
+const FX_ANIM_KEY = "tiol-fx-anim";
+const FX_SHADOW_KEY = "tiol-fx-shadow";
+
+function applyFx() {
+  let anim = "1";
+  let shadow = "1";
+  try {
+    anim = localStorage.getItem(FX_ANIM_KEY) || "1";
+    shadow = localStorage.getItem(FX_SHADOW_KEY) || "1";
+  } catch (e) {}
+  document.body.classList.toggle("fx-anim-off", anim !== "1");
+  document.body.classList.toggle("fx-shadow-off", shadow !== "1");
+  if (els.fxAnimState) els.fxAnimState.textContent = t(anim === "1" ? "settings.on" : "settings.off");
+  if (els.fxShadowState) els.fxShadowState.textContent = t(shadow === "1" ? "settings.on" : "settings.off");
+  els.toggleFxAnim.classList.toggle("btn--active", anim === "1");
+  els.toggleFxShadow.classList.toggle("btn--active", shadow === "1");
+}
+
+els.toggleFxAnim.addEventListener("click", () => {
+  const next = ((localStorage.getItem(FX_ANIM_KEY) || "1") === "1") ? "0" : "1";
+  try { localStorage.setItem(FX_ANIM_KEY, next); } catch (e) {}
+  applyFx();
+});
+els.toggleFxShadow.addEventListener("click", () => {
+  const next = ((localStorage.getItem(FX_SHADOW_KEY) || "1") === "1") ? "0" : "1";
+  try { localStorage.setItem(FX_SHADOW_KEY, next); } catch (e) {}
+  applyFx();
+});
 els.navPhotos.addEventListener("click", () => {
   switchView("photos");
   onboardingOnPhotosClicked();
@@ -255,6 +310,7 @@ async function renderSettings() {
     btn.classList.toggle("btn--active", btn.dataset.lang === cur);
   });
   renderThemeButtons();
+  applyFx();
   renderHwDecode();
   detectAndReportRenderer();
   refreshModelStatus();
@@ -665,7 +721,12 @@ function cardsPerRow() {
   return Math.max(1, Math.floor((contentW + gap) / (cardW + gap)));
 }
 
-function renderPhotos(photos) {
+/// Render a photo list into the current grid. By default the grid's scroll
+/// position is PRESERVED (forced refreshes after tagging/rating/filtering
+/// must not yank the user back to the top, C-19.10); pass
+/// `{ scrollTop: 0 }` for fresh result sets (searches, folder switches).
+function renderPhotos(photos, opts = {}) {
+  const scrollTop = opts.scrollTop !== undefined ? opts.scrollTop : currentGrid.scrollTop;
   currentPhotos = photos;
   renderedCount = 0;
   currentGrid.innerHTML = "";
@@ -678,12 +739,29 @@ function renderPhotos(photos) {
       activeRejectConds.size > 0;
     currentGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() || rejectsActive ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
+    pagePhotoSub.textContent = t("photos.status.count", { count: 0 });
     return;
   }
-  currentGrid.scrollTop = 0;
   // Initial render: exactly the top 5 rows (in order). Further rows are
   // rendered on scroll / viewport fill.
   renderChunk(cardsPerRow() * 5);
+  // Restore the scroll position AFTER content exists — assigning scrollTop to
+  // an empty grid is clamped to 0, which silently dropped the position and
+  // made every forced re-render jump back to the top (C-19.10).
+  currentGrid.scrollTop = scrollTop;
+  if (scrollTop > 0) {
+    // The initial chunk may be shorter than the target — keep filling
+    // (bounded) and re-applying until the position actually sticks.
+    let guard = 0;
+    while (
+      currentGrid.scrollTop < scrollTop &&
+      renderedCount < currentPhotos.length &&
+      guard++ < 20
+    ) {
+      scrollToViewport();
+      currentGrid.scrollTop = scrollTop;
+    }
+  }
   // Deterministic initial thumbnail load: explicitly enqueue the first
   // screenful top-down (the observer's initial callback proved unreliable
   // for cards already in the DOM — it skipped the first rows).
@@ -694,10 +772,19 @@ function renderPhotos(photos) {
   // One bad card must never kill the whole screenful — per-card try/catch,
   // and a card that failed to enqueue stays unmarked so click/observer can
   // retry it.
+  const g = currentGrid;
+  const restoreWindow =
+    scrollTop > 0 ? scrollTop - g.clientHeight : 0; // enqueue near the restored viewport
   for (let i = renderedCount - 1; i >= 0; i--) {
     const card = currentGrid.children[i];
     const img = card && card._img;
     if (!img || !card._photo) continue;
+    // Deep restore: only the cards around the restored position matter —
+    // enqueueing every rendered card would starve the visible ones (C-19.10).
+    if (restoreWindow > 0) {
+      const ct = card.offsetTop;
+      if (ct + card.offsetHeight < restoreWindow || ct > scrollTop + g.clientHeight * 2) continue;
+    }
     try {
       enqueueThumb(img, card._photo);
       img._initial = true;
@@ -735,21 +822,45 @@ const selectedIds = new Set();
 function setSelectMode(on) {
   if (selectMode === on) return;
   selectMode = on;
-  els.btnSelectMode.textContent = t(on ? "photos.selectDone" : "photos.selectMode");
+  // Both grid pages (photos/rejects) have their own select button — keep
+  // their labels and active state in sync (C-19.11).
+  const label = t(on ? "photos.selectDone" : "photos.selectMode");
+  els.btnSelectMode.textContent = label;
   els.btnSelectMode.classList.toggle("searchbar__select--active", on);
-  currentGrid.classList.toggle("selecting", on);
+  els.btnSelectModeRejects.textContent = label;
+  els.btnSelectModeRejects.classList.toggle("searchbar__select--active", on);
   els.selectionBar.hidden = !on;
+  els.selectionBarSecondary.hidden = !on;
   if (!on) {
     selectedIds.clear();
   }
   // Update already-rendered cards in place (no re-render: keeps scroll pos).
-  for (const card of currentGrid.children) {
-    if (!card._photo) continue;
-    card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
-    const cb = card.querySelector(".card__check");
-    if (cb) cb.hidden = !on;
+  // BOTH grids: switchView may have already swapped currentGrid when this
+  // runs on a view change, and the other grid must not keep its "selecting"
+  // class or stale checkboxes (C-19.11).
+  for (const grid of [els.photoGrid, rejectGrid]) {
+    grid.classList.toggle("selecting", on);
+    for (const card of grid.children) {
+      if (!card._photo) continue;
+      card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
+      const cb = card.querySelector(".card__check");
+      if (cb) cb.hidden = !on;
+      // Reject badge stays visible in select mode — it shifts down via CSS.
+      const rj = card.querySelector(".card__reject");
+      if (rj) rj.hidden = !(card._photo.colors || []).includes("reject");
+    }
   }
   updateSelectionBar();
+}
+
+/// Re-apply multi-select state to a freshly rendered grid (C-19.11):
+/// renderPhotos rebuilds cards, so the selected class must be re-applied
+/// after a delete that keeps select mode on.
+function applySelectionToGrid(grid) {
+  for (const card of grid.children) {
+    if (!card._photo) continue;
+    card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
+  }
 }
 
 function updateSelectionBar() {
@@ -759,12 +870,17 @@ function updateSelectionBar() {
   els.btnSelectionTag.disabled = n === 0;
   els.btnSelectionClearTags.disabled = n === 0;
   els.btnSelectionRate.disabled = n === 0;
+  els.btnSelectionExport.disabled = n === 0;
+  els.btnSelectionDelete.disabled = n === 0;
+  // "Delete files" is a REJECTS-page action only (C-19.10).
+  els.btnSelectionDelete.hidden = els.viewRejects.classList.contains("view--hidden");
 }
 
 /// Dialogs (add-tag / rate / confirm) must never overlap the floating
 /// selection bar — hide it while any of them is open (C-19.9).
 function setSelectionBarVisible(visible) {
   els.selectionBar.hidden = !(visible && selectMode);
+  els.selectionBarSecondary.hidden = !(visible && selectMode);
 }
 
 function toggleSelect(photo) {
@@ -776,20 +892,76 @@ function toggleSelect(photo) {
   updateSelectionBar();
 }
 
-// Selection-action feedback (C-19.6): shown as a popup ABOVE the bottom
-// selection bar — never inside it, so long texts can't squeeze the buttons.
+// Selection-action feedback (C-19.6/C-19.10): shown as a popup ABOVE the
+// bottom selection bar — positioned dynamically by measuring the bar, so it
+// can never overlap regardless of the bar's current height.
 let selectionHintTimer = null;
 function showSelectionHint(text) {
   const el = document.createElement("div");
   el.className = "toast selection-toast";
   el.textContent = text;
   document.body.appendChild(el);
+  try {
+    const bar = els.selectionBar;
+    if (bar && !bar.hidden) {
+      const r = bar.getBoundingClientRect();
+      el.style.bottom = `${Math.max(8, window.innerHeight - r.top + 10)}px`;
+    }
+  } catch (e) {
+    /* fall back to the CSS bottom */
+  }
   clearTimeout(selectionHintTimer);
   selectionHintTimer = setTimeout(() => el.remove(), 2500);
 }
 
 els.btnSelectMode.addEventListener("click", () => setSelectMode(!selectMode));
 els.btnSelectionCancel.addEventListener("click", () => setSelectMode(false));
+
+// "Export" (C-19.10): copy the selected photos into a chosen folder — works
+// from BOTH photo grids.
+els.btnSelectionExport.addEventListener("click", async () => {
+  if (!selectedIds.size) return;
+  let dest = null;
+  try {
+    dest = await openDialog({ directory: true, multiple: false });
+  } catch (e) {
+    alert(String(e));
+    return;
+  }
+  if (!dest) return;
+  const path = Array.isArray(dest) ? dest[0] : dest;
+  const ids = [...selectedIds];
+  try {
+    const n = await invoke("export_files", { fileIds: ids, destDir: path });
+    showSelectionHint(t("photos.exported", { count: n }));
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
+// "Delete" (C-19.10, rejects page): permanently remove the selected photos
+// from disk AND the library — confirmed first.
+els.btnSelectionDelete.addEventListener("click", () => {
+  const n = selectedIds.size;
+  confirmDialog(t("photos.deleteConfirm", { count: n }), async () => {
+    const ids = [...selectedIds];
+    try {
+      await invoke("delete_files", { fileIds: ids });
+      // STAY in select mode so more files can be deleted in one pass
+      // (C-19.11); drop the deleted ids and re-apply the selection after
+      // the fresh render. Serialized: loadPhotos must not race loadRejects
+      // or it would cross-paint the full list into the rejects grid.
+      for (const id of ids) selectedIds.delete(id);
+      showSelectionHint(t("photos.deleted", { count: ids.length }));
+      await loadRejects();
+      await loadPhotos();
+      applySelectionToGrid(rejectGrid);
+      updateSelectionBar();
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+});
 
 // "Delete tags" (red): strip ALL tags (text + colors) from the selection.
 els.btnSelectionClearTags.addEventListener("click", () => {
@@ -799,12 +971,17 @@ els.btnSelectionClearTags.addEventListener("click", () => {
     try {
       await invoke("clear_tags_from_files", { fileIds: ids });
       showSelectionHint(t("photos.tagsDeleted", { count: ids.length }));
-      // Update the visible cards in place (keeps scroll position).
+      // Update the data, then re-render — the in-place path missed the
+      // top-right reject badge (C-19.10).
       for (const p of currentPhotos) {
         if (!selectedIds.has(p.id)) continue;
         p.tags = [];
         p.colors = [];
-        if (p._card) renderCardMeta(p._card, p);
+      }
+      if (els.viewRejects.classList.contains("view--hidden")) {
+        renderPhotos(applyFilters(allPhotos));
+      } else {
+        renderPhotos(applyRejectConds(applyFilters(allRejects)));
       }
     } catch (e) {
       alert(String(e));
@@ -845,14 +1022,14 @@ function onGridMouseDown(e) {
   e.preventDefault(); // no text selection / native image drag
   const box = document.createElement("div");
   box.className = "selection-box";
-  grid.appendChild(box);
-  const startX = e.clientX - gridRect.left;
-  const startY = e.clientY - gridRect.top;
+  document.body.appendChild(box); // fixed positioning: viewport coords
+  const startX = e.clientX;
+  const startY = e.clientY;
   dragSel = { startX, startY, box, gridRect, moved: false, last: null };
   const onMove = (ev) => {
     if (!dragSel) return;
-    const x = ev.clientX - dragSel.gridRect.left;
-    const y = ev.clientY - dragSel.gridRect.top;
+    const x = ev.clientX;
+    const y = ev.clientY;
     const w = x - dragSel.startX;
     const h = y - dragSel.startY;
     if (Math.abs(w) > 4 || Math.abs(h) > 4) dragSel.moved = true;
@@ -866,15 +1043,12 @@ function onGridMouseDown(e) {
     dragSel.box.style.top = T + "px";
     dragSel.box.style.width = R - L + "px";
     dragSel.box.style.height = B - T + "px";
-    // Live highlight of intersecting cards (grid-relative coords).
+    // Live highlight of intersecting cards (viewport coords — the box is
+    // fixed-positioned now, C-19.10).
     for (const card of grid.children) {
       if (!card._photo) continue;
       const r = card.getBoundingClientRect();
-      const hit =
-        r.left - dragSel.gridRect.left < R &&
-        r.right - dragSel.gridRect.left > L &&
-        r.top - dragSel.gridRect.top < B &&
-        r.bottom - dragSel.gridRect.top > T;
+      const hit = r.left < R && r.right > L && r.top < B && r.bottom > T;
       card.classList.toggle("card--sel-hover", hit);
     }
   };
@@ -892,11 +1066,7 @@ function onGridMouseDown(e) {
     for (const card of grid.children) {
       if (!card._photo) continue;
       const r = card.getBoundingClientRect();
-      const hit =
-        r.left - d.gridRect.left < R &&
-        r.right - d.gridRect.left > L &&
-        r.top - d.gridRect.top < B &&
-        r.bottom - d.gridRect.top > T;
+      const hit = r.left < R && r.right > L && r.top < B && r.bottom > T;
       if (hit && !selectedIds.has(card._photo.id)) {
         selectedIds.add(card._photo.id);
         card.classList.add("card--selected");
@@ -989,7 +1159,7 @@ els.tagpickOverlay.addEventListener("click", (e) => {
 // Color labels (C-14): applied from the selection-bar dots, shown as dots on
 // the cards (right of the filename), filterable from the search bar (union).
 // ---------------------------------------------------------------------------
-const COLOR_ORDER = ["red", "orange", "yellow", "green", "blue", "purple"];
+const COLOR_ORDER = ["red", "orange", "yellow", "green", "blue", "purple", "reject"];
 const COLOR_HEX = {
   red: "#ff3b30",
   orange: "#ff9500",
@@ -1055,24 +1225,38 @@ function updateFilterButton() {
 
 // Selection-bar dots: one per color; clicking applies/toggles it on ALL
 // selected photos (phone-gallery semantics, handled by toggle_color_tag).
+// The "reject" marker is drawn as a circle with an X (C-19.10).
+function styleColorDot(dot, c) {
+  if (c === "reject") {
+    dot.classList.add("color-dot--reject");
+  } else {
+    dot.style.background = COLOR_HEX[c];
+  }
+}
+
 const selectionColorDots = document.getElementById("selection-color-dots");
 for (const c of COLOR_ORDER) {
   const dot = document.createElement("button");
   dot.className = "color-dot color-dot--sel";
-  dot.style.background = COLOR_HEX[c];
+  styleColorDot(dot, c);
   dot.title = t(`colors.${c}`);
   dot.addEventListener("click", async () => {
     if (!selectedIds.size) return;
     const ids = [...selectedIds];
     try {
       const all = await invoke("toggle_color_tag", { fileIds: ids, color: c });
-      // Update the visible cards in place (keeps scroll position).
+      // Update the data, then force a re-render — in-place DOM updates proved
+      // unreliable for badge visibility (C-19.10).
       for (const p of currentPhotos) {
         if (!selectedIds.has(p.id)) continue;
         const cs = p.colors || [];
         if (all && !cs.includes(c)) p.colors = [...cs, c];
         else if (!all && cs.includes(c)) p.colors = cs.filter((x) => x !== c);
-        if (p._card) renderCardMeta(p._card, p);
+      }
+      if (els.viewRejects.classList.contains("view--hidden")) {
+        renderPhotos(applyFilters(allPhotos));
+      } else {
+        renderPhotos(applyRejectConds(applyFilters(allRejects)));
       }
       dot.classList.add("color-dot--pulse");
       setTimeout(() => dot.classList.remove("color-dot--pulse"), 350);
@@ -1096,6 +1280,20 @@ const colorFilterLens = document.getElementById("color-filter-lens");
 const filterFocalMin = document.getElementById("filter-focal-min");
 const filterFocalMax = document.getElementById("filter-focal-max");
 
+// Anchor a dropdown panel under its button, clamped to the viewport so it
+// never overflows on the right in fullscreen (C-19.10).
+function positionPanel(panel, btn) {
+  const r = btn.getBoundingClientRect();
+  panel.hidden = false;
+  const pw = panel.offsetWidth || 240;
+  let left = Math.max(8, r.left);
+  if (left + pw > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - pw - 8);
+  }
+  panel.style.left = `${left}px`;
+  panel.style.top = `${r.bottom + 6}px`;
+}
+
 function renderFilterDots() {
   colorFilterDots.textContent = "";
   for (const c of COLOR_ORDER) {
@@ -1103,7 +1301,7 @@ function renderFilterDots() {
     dot.className =
       "color-dot color-dot--filter" +
       (activeColorFilters.has(c) ? " color-dot--on" : "");
-    dot.style.background = COLOR_HEX[c];
+    styleColorDot(dot, c);
     dot.title = t(`colors.${c}`);
     dot.addEventListener("click", () => {
       if (activeColorFilters.has(c)) activeColorFilters.delete(c);
@@ -1197,11 +1395,7 @@ btnColorFilter.addEventListener("click", async (e) => {
   e.stopPropagation();
   colorFilterPanel.hidden = !colorFilterPanel.hidden;
   if (!colorFilterPanel.hidden) {
-    // Anchor the panel under the filter button (it sits between the search
-    // boxes, not at the left edge anymore).
-    const r = btnColorFilter.getBoundingClientRect();
-    colorFilterPanel.style.left = `${Math.max(8, r.left)}px`;
-    colorFilterPanel.style.top = `${r.bottom + 6}px`;
+    positionPanel(colorFilterPanel, btnColorFilter);
     await renderFilterLens();
   }
 });
@@ -1536,6 +1730,9 @@ async function setPhotoRating(p, n) {
 function renderCardColors(el, colors) {
   el.textContent = "";
   for (const c of colors || []) {
+    // The reject marker is NOT rendered here — it has its own top-right
+    // badge on the thumbnail (C-19.10).
+    if (c === "reject") continue;
     const dot = document.createElement("span");
     dot.className = "card__color";
     dot.style.background = COLOR_HEX[c] || "#888";
@@ -1598,6 +1795,14 @@ function buildCard(p) {
   check.className = "card__check";
   check.hidden = !selectMode;
   thumb.appendChild(check);
+  // Reject marker (C-19.10): circle-with-X pinned to the thumb's TOP-RIGHT.
+  // In select mode it shifts DOWN (CSS .grid.selecting) to make room for the
+  // checkbox — always visible, never hidden (C-19.10).
+  const rejectX = document.createElement("span");
+  rejectX.className = "card__reject";
+  rejectX.title = t("colors.reject");
+  rejectX.hidden = !(p.colors || []).includes("reject");
+  thumb.appendChild(rejectX);
   // Debug-mode AI confidence badge (semantic search fills FileRecord.score).
   if (debugMode && p.score != null) {
     const badge = document.createElement("span");
@@ -1698,11 +1903,18 @@ function buildCard(p) {
   return card;
 }
 
-async function loadPhotos(folderId = null) {
+async function loadPhotos(folderId = null, opts = {}) {
   try {
     const photos = await invoke("get_photos", { folderId });
     allPhotos = photos;
-    renderPhotos(applyFilters(photos));
+    // ALWAYS render into the photos grid: currentGrid may be the rejects
+    // grid when a refresh is triggered from there (delete / scan), and
+    // painting the full unfiltered list into it caused a visible flash of
+    // every photo on the rejects page (C-19.11).
+    const wasGrid = currentGrid;
+    currentGrid = els.photoGrid;
+    renderPhotos(applyFilters(photos), opts);
+    currentGrid = wasGrid;
     // Fill the viewport beyond the initial chunk — startup renders only the
     // first screenful and nothing triggers the fill loop otherwise (C-19.7).
     requestAnimationFrame(fillGridIfNeeded);
@@ -1939,7 +2151,7 @@ function renderFolders(folders) {
       row.addEventListener("click", (ev) => {
         if (ev.target === btn) return;
         switchView("photos");
-        loadPhotos(f.id);
+        loadPhotos(f.id, { scrollTop: 0 });
       });
       els.folderList.appendChild(row);
     }
@@ -1969,10 +2181,10 @@ async function runSearch() {
     try {
       const res = await invoke("search", { query: q2, mode });
       allPhotos = res;
-      renderPhotos(applyFilters(res));
+      renderPhotos(applyFilters(res), { scrollTop: 0 });
     } catch (e) {
       console.error(e);
-      renderPhotos([]);
+      renderPhotos([], { scrollTop: 0 });
       const msg = String(e);
       if (mode === "semantic") {
         els.photoStatus.textContent = msg.includes("not ready")
@@ -1991,7 +2203,7 @@ async function runSearch() {
   try {
     const nameRes = await invoke("search_files", { query: qName });
     allPhotos = nameRes || [];
-    renderPhotos(applyFilters(allPhotos));
+    renderPhotos(applyFilters(allPhotos), { scrollTop: 0 });
   } catch (e) {
     console.error(e);
   }
@@ -2064,7 +2276,9 @@ els.ratingFilterRejects.addEventListener("change", () => {
   if (els.viewRejects.classList.contains("view--hidden")) {
     renderPhotos(applyFilters(allPhotos));
   } else {
-    renderPhotos(applyFilters(allRejects));
+    // Reject conditions must still apply — a bare applyFilters would show
+    // every photo on the rejects page (C-19.11).
+    renderPhotos(applyRejectConds(applyFilters(allRejects)));
   }
 });
 
@@ -2074,9 +2288,7 @@ els.btnColorFilterRejects.addEventListener("click", async (e) => {
   e.stopPropagation();
   colorFilterPanel.hidden = !colorFilterPanel.hidden;
   if (!colorFilterPanel.hidden) {
-    const r = els.btnColorFilterRejects.getBoundingClientRect();
-    colorFilterPanel.style.left = `${Math.max(8, r.left)}px`;
-    colorFilterPanel.style.top = `${r.bottom + 6}px`;
+    positionPanel(colorFilterPanel, els.btnColorFilterRejects);
     await renderFilterLens();
   }
 });
@@ -2085,8 +2297,8 @@ els.btnColorFilterRejects.addEventListener("click", async (e) => {
 // UI-only (not implemented), the other three filter the rejects grid. The
 // analysis (eyes-closed semantics + exposure pixels) runs once per library
 // and is cached in the DB (incremental for new files).
-const REJECT_CONDS = ["blur", "under", "over", "eyes"];
-const activeRejectConds = new Set(["blur", "under", "over", "eyes"]);
+const REJECT_CONDS = ["blur", "under", "over", "eyes", "rejected"];
+const activeRejectConds = new Set(["blur", "under", "over", "eyes", "rejected"]);
 
 /// Filter by the checked reject conditions (UNION inside — any matched
 /// condition shows the photo; blur is skipped until implemented). Photos
@@ -2099,6 +2311,7 @@ function applyRejectConds(photos) {
       if (c === "over" && p.overexposed === 1) return true;
       if (c === "under" && p.underexposed === 1) return true;
       if (c === "eyes" && p.eyes_closed === 1) return true;
+      if (c === "rejected" && (p.colors || []).includes("reject")) return true;
     }
     return false;
   });
@@ -2177,9 +2390,7 @@ els.btnRejectCond.addEventListener("click", (e) => {
   e.stopPropagation();
   els.rejectCondPanel.hidden = !els.rejectCondPanel.hidden;
   if (!els.rejectCondPanel.hidden) {
-    const r = els.btnRejectCond.getBoundingClientRect();
-    els.rejectCondPanel.style.left = `${Math.max(8, r.left)}px`;
-    els.rejectCondPanel.style.top = `${r.bottom + 6}px`;
+    positionPanel(els.rejectCondPanel, els.btnRejectCond);
   }
 });
 els.btnRejectCondClear.addEventListener("click", () => {
@@ -2288,13 +2499,15 @@ els.btnRefresh.addEventListener("click", async () => {
 // Tauri events: refresh on scan (a scan may also add NEW lens names from
 // freshly added photos — drop the lens-list cache so the filter panel
 // re-fetches it next time it opens; C-15.4).
-listen("scan-complete", () => {
+listen("scan-complete", async () => {
   lensCache = null;
   // New/changed files may need reject metrics — allow one more analysis pass.
   rejectAnalysisTriggered = false;
   markFoldersDirty();
-  loadPhotos();
-  loadRejects();
+  // Serialized: concurrent loadPhotos/loadRejects would cross-paint into the
+  // other grid (C-19.11).
+  await loadPhotos();
+  await loadRejects();
   loadFolders();
 });
 
@@ -2302,6 +2515,7 @@ listen("scan-complete", () => {
 onLanguageChange(() => {
   applyStaticI18n();
   initTheme();
+  requestAnimationFrame(updateSidebarIndicator);
   if (!els.viewPhotos.classList.contains("view--hidden")) {
     renderPhotos(currentPhotos);
   } else if (!els.viewFolders.classList.contains("view--hidden")) {
@@ -2488,6 +2702,7 @@ function onboardingOnPhotosClicked() {
   }
   applyStaticI18n();
     initTheme();
+  applyFx();
   // Debug flag gates AI-confidence badges — read it before first render.
   try {
     debugMode = (await invoke("get_setting", { key: "debug" })) === "1";
@@ -2496,6 +2711,22 @@ function onboardingOnPhotosClicked() {
   }
   loadPhotos();
   loadFolders();
+  // Position the active-indicator WITHOUT the glide transition at startup —
+  // boot never calls switchView, so the bar would otherwise sit at the top
+  // of the sidebar (above the camera icon) until the first view switch.
+  // Snap it straight to the active button (C-19.10).
+  const indEl = document.getElementById("sidebar-indicator");
+  const activeBtn = document.querySelector(".sidebar__btn--active");
+  if (indEl && activeBtn) {
+    indEl.style.transition = "none";
+    indEl.style.transform = `translateY(${activeBtn.offsetTop + 6}px)`;
+    // Re-enable the CSS transition after the snap — leaving the inline
+    // `transition: none` in place would kill the glide animation for the
+    // rest of the session (C-19.10).
+    requestAnimationFrame(() => {
+      indEl.style.transition = "";
+    });
+  }
   detectAndReportRenderer();
   // First-run onboarding (C-19.7): show only when the flag is missing —
   // the first release that ships the tour shows it to every install.
