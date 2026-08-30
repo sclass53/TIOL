@@ -1650,6 +1650,26 @@ html[data-theme="light"] .card {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.16);
 }
 
+/* Sidebar always stays dark even in light theme */
+html[data-theme="light"] .sidebar {
+  background: rgba(28, 28, 30, 0.92);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+html[data-theme="light"] .sidebar__btn,
+html[data-theme="light"] .sidebar__toggle {
+  color: rgba(255, 255, 255, 0.75);
+}
+html[data-theme="light"] .sidebar__btn:hover,
+html[data-theme="light"] .sidebar__toggle:hover {
+  color: #ffffff;
+}
+html[data-theme="light"] .sidebar__btn--active {
+  color: var(--accent);
+}
+html[data-theme="light"] .sidebar__indicator {
+  background: var(--accent);
+}
+
 body.fx-anim-off .sidebar__indicator {
   transition: none;
 }
