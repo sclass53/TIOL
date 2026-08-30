@@ -306,6 +306,28 @@ html, body {
   opacity: 0.8;
 }
 
+/* Close button for the filter panel */
+.color-filter__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 22px;
+  text-align: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+.color-filter__close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 /* Star rating filter inside the dropdown (C-17) */
 .color-filter__rating {
   display: flex;

@@ -51,6 +51,7 @@
     "filterColor": "颜色筛选",
     "filterBtn": "筛选",
     "filterClear": "清除",
+    "filterPanelClose": "关闭筛选",
     "filterLens": "镜头",
     "filterLensEmpty": "库中没有镜头数据",
     "filterFocal": "焦段",

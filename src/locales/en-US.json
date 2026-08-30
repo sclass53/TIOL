@@ -51,6 +51,7 @@
     "filterColor": "Color filter",
     "filterBtn": "Filter",
     "filterClear": "Clear",
+    "filterPanelClose": "Close panel",
     "filterLens": "Lens",
     "filterLensEmpty": "No lens info in the library",
     "filterFocal": "Focal length",

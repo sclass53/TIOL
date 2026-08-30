@@ -211,8 +211,12 @@ function clearSharedFilters() {
   minRating = 0;
   filterFocalMin.value = "";
   filterFocalMax.value = "";
-  ratingFilterEl.value = "0";
-  els.ratingFilterRejects.value = "0";
+  activeRatings.clear();
+  for (let i = 0; i <= 5; i++) activeRatings.add(i);
+  if (ratingFilterEl) {
+    ratingFilterEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
+  }
+  if (els.ratingFilterRejects) els.ratingFilterRejects.value = "0";
   renderFilterDots();
   updateFilterButton();
 }
@@ -1451,6 +1455,18 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   updateFilterButton();
   renderPhotos(applyFilters(allPhotos));
 });
+
+// Close filter panel with the explicit X button (C-19.12).
+document.getElementById("btn-color-filter-close").addEventListener("click", () => {
+  colorFilterPanel.hidden = true;
+});
+
+// Stop clicks inside the panel from bubbling to the document listener,
+// so checking multiple ratings/lenses/colors keeps the panel open.
+colorFilterPanel.addEventListener("click", (e) => {
+  e.stopPropagation();
+});
+
 document.addEventListener("click", (e) => {
   if (
     !colorFilterPanel.hidden &&
@@ -2322,7 +2338,6 @@ async function runRejectSearch() {
 // view — keep both selects in sync (C-19).
 els.ratingFilterRejects.addEventListener("change", () => {
   minRating = parseInt(els.ratingFilterRejects.value, 10) || 0;
-  ratingFilterEl.value = String(minRating);
   if (els.viewRejects.classList.contains("view--hidden")) {
     renderPhotos(applyFilters(allPhotos));
   } else {
