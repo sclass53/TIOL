@@ -3,6 +3,7 @@
   --bg-surface: #2C2C2E;
   --bg-elevated: #3A3A3C;
   --separator: #48484A;
+  --menu-bg-custom: #ffffff;
   --text-primary: #F2F2F7;
   --text-secondary: #8E8E93;
   --accent: #0A84FF;
@@ -201,6 +202,44 @@ html, body {
   cursor: pointer;
 }
 
+/* Rating filter checkboxes (C-17): compact row of 0–5 star toggles. */
+.searchbar__rating-filter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 8px;
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+}
+
+.searchbar__rating-filter label {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.searchbar__rating-filter label:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.searchbar__rating-filter input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
 /* "Select" button at the right end of the search bar (C-13): solid BLUE
    like the AI Tagging primary button (no ghost state — always colored),
    same size as every other button. Active (select mode) keeps the same
@@ -237,7 +276,7 @@ html, body {
   border-color: var(--accent);
 }
 
-/* Filter dropdown panel (C-14/C-15: colors + lens + focal) — positioned
+/* Filter dropdown panel (C-14/C-15: colors + lens + focal + rating) — positioned
    under the filter button by JS (left/top are set on open). Fixed width so
    long lens names get ellipsis instead of squashing the layout. */
 .color-filter {
@@ -246,21 +285,55 @@ html, body {
   width: 240px;
   max-height: 75vh;
   overflow-y: auto;
-  background: var(--bg-elevated);
-  border: 1px solid var(--separator);
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 .color-filter[hidden] {
   display: none;
 }
 .color-filter__title {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* Star rating filter inside the dropdown (C-17) */
+.color-filter__rating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.color-filter__rating label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  user-select: none;
+  white-space: nowrap;
+}
+.color-filter__rating label:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.color-filter__rating input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 .color-filter__dots {
   display: flex;
@@ -320,8 +393,8 @@ html, body {
 .color-filter__focal-input {
   width: 90px;
   height: 28px;
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-elevated);
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius);
   color: var(--text-primary);
   padding: 0 8px;
@@ -681,6 +754,41 @@ html, body {
   text-overflow: ellipsis;
   color: var(--text-secondary);
   min-width: 0;
+}
+
+/* Settings: color picker */
+.settings__color {
+  width: 40px;
+  height: 28px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  padding: 2px;
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+/* Liquid-glass theme overrides */
+.theme-liquid-glass .color-filter,
+[data-theme="liquid-glass"] .color-filter {
+  background: color-mix(in srgb, var(--menu-bg-custom) 28%, rgba(255,255,255,0.08));
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25), inset 0 0 0 1px rgba(255,255,255,0.10);
+  border-radius: 14px;
+}
+.theme-liquid-glass .color-filter__title,
+[data-theme="liquid-glass"] .color-filter__title {
+  color: #1c1c1e;
+}
+.theme-liquid-glass .color-filter__rating label,
+[data-theme="liquid-glass"] .color-filter__rating label {
+  color: #1c1c1e;
+  background: rgba(255, 255, 255, 0.35);
+}
+.theme-liquid-glass .color-filter__rating label:hover,
+[data-theme="liquid-glass"] .color-filter__rating label:hover {
+  background: rgba(255, 255, 255, 0.55);
 }
 
 /* Star rating row (C-17): below the thumbnail. Unrated stars are a thin

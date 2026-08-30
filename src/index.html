@@ -29,17 +29,18 @@
           </select>
           <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
-          <select class="searchbar__mode" id="rating-filter" data-i18n-title="photos.ratingFilter">
-            <option value="0" data-i18n="photos.ratingAll">全部</option>
-            <option value="1" data-i18n="photos.rating1">≥ 1 星</option>
-            <option value="2" data-i18n="photos.rating2">≥ 2 星</option>
-            <option value="3" data-i18n="photos.rating3">≥ 3 星</option>
-            <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
-            <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
-          </select>
+          <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="photo-grid"></div>
+        <div class="selection-bar glass" id="selection-bar" hidden>
+          <span class="selection-bar__count" id="selection-count"></span>
+          <span class="selection-bar__hint" id="selection-hint" hidden></span>
+          <span class="selection-bar__dots" id="selection-color-dots"></span>
+          <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+          <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
+          <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
+        </div>
         <div class="statusbar" id="photo-status">0 photos</div>
       </section>
 
@@ -181,7 +182,7 @@
 
   <!-- Image preview (modal, right panel) -->
   <div class="preview-overlay" id="preview-overlay" hidden>
-    <div class="preview" id="preview-panel">
+    <div class="preview glass" id="preview-panel">
       <div class="preview__header">
         <button class="preview__close" id="preview-close" data-i18n-title="preview.close" aria-label="Close">✕</button>
         <span class="preview__name" id="preview-name"></span>
@@ -196,7 +197,7 @@
 
   <!-- Tag edit dialog (list of current tags + picker of existing tags) -->
   <div class="dialog-overlay" id="edit-overlay" hidden>
-    <div class="dialog" role="dialog" aria-modal="true">
+    <div class="dialog glass" role="dialog" aria-modal="true">
       <div class="dialog__title" data-i18n="card.edit.title">编辑标签</div>
       <div class="dialog__label" data-i18n="card.edit.current">当前标签</div>
       <div class="edit-chips" id="edit-chips"></div>
@@ -212,7 +213,7 @@
 
   <!-- Multi-select "add tag" panel (pick one existing tag for the selection) -->
   <div class="dialog-overlay" id="tagpick-overlay" hidden>
-    <div class="dialog" role="dialog" aria-modal="true">
+    <div class="dialog glass" role="dialog" aria-modal="true">
       <div class="dialog__title" data-i18n="tags.pickTitle">为选中的照片添加标签</div>
       <input class="dialog__input" id="tagpick-search" type="text" data-i18n-placeholder="tags.pickSearch" />
       <div class="tagpick-list" id="tagpick-list"></div>
@@ -223,7 +224,7 @@
   </div>
 
   <!-- Color/lens/focal filter dropdown (multi-select, all intersect) -->
-  <div class="color-filter" id="color-filter" hidden>
+  <div class="color-filter glass" id="color-filter" hidden>
     <div class="color-filter__title" data-i18n="photos.filterColor">颜色筛选</div>
     <div class="color-filter__dots" id="color-filter-dots"></div>
     <div class="color-filter__title" data-i18n="photos.filterLens">镜头</div>
@@ -233,6 +234,15 @@
       <input class="color-filter__focal-input" id="filter-focal-min" type="number" min="0" step="1" placeholder="min mm" data-i18n-placeholder="photos.filterFocalMin" />
       <span class="color-filter__focal-sep">–</span>
       <input class="color-filter__focal-input" id="filter-focal-max" type="number" min="0" step="1" placeholder="max mm" data-i18n-placeholder="photos.filterFocalMax" />
+    </div>
+    <div class="color-filter__title" data-i18n="photos.ratingFilter">按评分筛选</div>
+    <div class="color-filter__rating" id="rating-filter">
+      <label><input type="checkbox" value="0" checked><span data-i18n="photos.rating0">无星</span></label>
+      <label><input type="checkbox" value="1" checked><span data-i18n="photos.rating1">1星</span></label>
+      <label><input type="checkbox" value="2" checked><span data-i18n="photos.rating2">2星</span></label>
+      <label><input type="checkbox" value="3" checked><span data-i18n="photos.rating3">3星</span></label>
+      <label><input type="checkbox" value="4" checked><span data-i18n="photos.rating4">4星</span></label>
+      <label><input type="checkbox" value="5" checked><span data-i18n="photos.rating5">5星</span></label>
     </div>
     <button class="btn btn--ghost color-filter__clear" id="btn-color-filter-clear" data-i18n="photos.filterClear">清除</button>
   </div>
@@ -258,7 +268,7 @@
 
   <!-- Generic confirm dialog (clears tags, etc.) -->
   <div class="dialog-overlay" id="confirm-overlay" hidden>
-    <div class="dialog" role="dialog" aria-modal="true">
+    <div class="dialog glass" role="dialog" aria-modal="true">
       <div class="dialog__title" data-i18n="dialog.confirmTitle">确认操作</div>
       <div class="dialog__text" id="confirm-text"></div>
       <div class="dialog__actions">

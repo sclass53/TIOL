@@ -216,22 +216,44 @@ function clearSharedFilters() {
   renderFilterDots();
   updateFilterButton();
 }
-// --- Theme (dark / light) — persisted in localStorage, no backend needed ---
+// --- Theme (dark / light / liquid-glass) — persisted in localStorage, no backend needed ---
 const THEME_KEY = "tiol-theme";
+const MENU_BG_KEY = "menu_bg_color";
+
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
+  if (theme === "liquid-glass") {
+    document.body.classList.add("theme-liquid-glass");
+  } else {
+    document.body.classList.remove("theme-liquid-glass");
+  }
 }
 function initTheme() {
   let saved = "dark";
   try { saved = localStorage.getItem(THEME_KEY) || "dark"; } catch (e) {}
   applyTheme(saved);
 }
+
+async function applyMenuBgColor(color) {
+  if (!color) return;
+  document.documentElement.style.setProperty("--menu-bg-custom", color);
+  try { await invoke("set_setting", { key: MENU_BG_KEY, value: color }); } catch (e) {}
+}
+
+async function initMenuBgColor() {
+  let saved = "#ffffff";
+  try { saved = (await invoke("get_setting", { key: MENU_BG_KEY })) || "#ffffff"; } catch (e) {}
+  if (els.menuBgColor) els.menuBgColor.value = saved;
+  applyMenuBgColor(saved);
+}
+
 function renderThemeButtons() {
   const cur = document.documentElement.getAttribute("data-theme") || "dark";
   els.themeOptions.querySelectorAll("[data-theme]").forEach((btn) => {
     btn.classList.toggle("btn--active", btn.dataset.theme === cur);
   });
 }
+
 els.themeOptions.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-theme]");
   if (!btn) return;
@@ -269,6 +291,10 @@ els.toggleFxShadow.addEventListener("click", () => {
   const next = ((localStorage.getItem(FX_SHADOW_KEY) || "1") === "1") ? "0" : "1";
   try { localStorage.setItem(FX_SHADOW_KEY, next); } catch (e) {}
   applyFx();
+});
+
+els.menuBgColor?.addEventListener("input", (ev) => {
+  applyMenuBgColor(ev.target.value);
 });
 els.navPhotos.addEventListener("click", () => {
   switchView("photos");
@@ -311,6 +337,7 @@ async function renderSettings() {
   });
   renderThemeButtons();
   applyFx();
+  await initMenuBgColor();
   renderHwDecode();
   detectAndReportRenderer();
   refreshModelStatus();
@@ -1176,12 +1203,16 @@ const COLOR_HEX = {
 // The unfiltered result of the current query — filters re-apply to it.
 let allPhotos = [];
 
-// Star rating filter (C-17): only show photos with rating >= minRating.
-// 0 = no filter. Driven by the #rating-filter dropdown in the search bar.
-let minRating = 0;
+// Star rating filter (C-17): show only photos whose rating is in the active
+// set. Each checkbox toggles one rating (0–5). Unchecked ratings are hidden.
+// Default: all ratings selected.
+const activeRatings = new Set([0, 1, 2, 3, 4, 5]);
 const ratingFilterEl = document.getElementById("rating-filter");
 ratingFilterEl.addEventListener("change", () => {
-  minRating = parseInt(ratingFilterEl.value, 10) || 0;
+  activeRatings.clear();
+  ratingFilterEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    if (cb.checked) activeRatings.add(parseInt(cb.value, 10));
+  });
   renderPhotos(applyFilters(allPhotos));
 });
 
@@ -1191,7 +1222,7 @@ function hasActiveFilters() {
     activeLensFilters.size > 0 ||
     focalMin != null ||
     focalMax != null ||
-    minRating > 0
+    activeRatings.size < 6
   );
 }
 
@@ -1217,8 +1248,8 @@ function applyFilters(photos) {
       if (focalMin != null && p.focal_length < focalMin) return false;
       if (focalMax != null && p.focal_length > focalMax) return false;
     }
-    // Star rating (C-17): photos without a rating (0) fail a >= filter.
-    if (minRating > 0 && (p.rating || 0) < minRating) return false;
+    // Star rating (C-17): photo must have a rating currently checked.
+    if (activeRatings.size < 6 && !activeRatings.has(p.rating || 0)) return false;
     return true;
   });
 }
@@ -1410,8 +1441,11 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   focalMax = null;
   filterFocalMin.value = "";
   filterFocalMax.value = "";
-  minRating = 0;
-  ratingFilterEl.value = "0";
+  activeRatings.clear();
+  for (let i = 0; i <= 5; i++) activeRatings.add(i);
+  ratingFilterEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.checked = true;
+  });
   renderFilterDots();
   renderFilterLens();
   updateFilterButton();
@@ -1735,7 +1769,7 @@ async function setPhotoRating(p, n) {
       const stars = p._card.querySelector(".card__stars");
       if (stars) renderCardStars(stars, p.rating);
     }
-    if (minRating > 0) renderPhotos(applyFilters(allPhotos));
+    if (activeRatings.size < 6) renderPhotos(applyFilters(allPhotos));
   } catch (e) {
     alert(String(e));
   }
