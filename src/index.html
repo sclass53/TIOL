@@ -81,14 +81,6 @@
           <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-rejects" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
           <button class="btn btn--ghost searchbar__filter" id="btn-reject-cond" data-i18n="rejects.cond">废片条件</button>
-          <select class="searchbar__mode" id="rating-filter-rejects" data-i18n-title="photos.ratingFilter">
-            <option value="0" data-i18n="photos.ratingAll">全部</option>
-            <option value="1" data-i18n="photos.rating1">≥ 1 星</option>
-            <option value="2" data-i18n="photos.rating2">≥ 2 星</option>
-            <option value="3" data-i18n="photos.rating3">≥ 3 星</option>
-            <option value="4" data-i18n="photos.rating4">≥ 4 星</option>
-            <option value="5" data-i18n="photos.rating5">≥ 5 星</option>
-          </select>
           <button class="btn searchbar__select" id="btn-select-mode-rejects" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="reject-grid"></div>
@@ -251,6 +243,15 @@
   <div class="color-filter reject-cond-panel" id="reject-cond-panel" hidden>
     <div class="color-filter__title" data-i18n="rejects.cond">废片条件</div>
     <div class="reject-cond__items" id="reject-cond-items"></div>
+    <div class="color-filter__title" data-i18n="photos.ratingFilter">按评分筛选</div>
+    <div class="color-filter__rating" id="rating-filter-rejects">
+      <label><input type="checkbox" value="0" checked><span data-i18n="photos.rating0">无星</span></label>
+      <label><input type="checkbox" value="1" checked><span data-i18n="photos.rating1">1星</span></label>
+      <label><input type="checkbox" value="2" checked><span data-i18n="photos.rating2">2星</span></label>
+      <label><input type="checkbox" value="3" checked><span data-i18n="photos.rating3">3星</span></label>
+      <label><input type="checkbox" value="4" checked><span data-i18n="photos.rating4">4星</span></label>
+      <label><input type="checkbox" value="5" checked><span data-i18n="photos.rating5">5星</span></label>
+    </div>
     <button class="btn btn--ghost color-filter__clear" id="btn-reject-cond-clear" data-i18n="rejects.clear">清除</button>
   </div>
 

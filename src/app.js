@@ -217,7 +217,7 @@ function clearSharedFilters() {
   if (ratingFilterEl) {
     ratingFilterEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = true; });
   }
-  if (els.ratingFilterRejects) els.ratingFilterRejects.value = "0";
+  if (els.ratingFilterRejects) renderRejectRatings();
   renderFilterDots();
   updateFilterButton();
 }
@@ -2337,18 +2337,8 @@ async function runRejectSearch() {
   }
 }
 
-// Rating dropdown of the rejects view shares `minRating` with the photos
-// view — keep both selects in sync (C-19).
-els.ratingFilterRejects.addEventListener("change", () => {
-  minRating = parseInt(els.ratingFilterRejects.value, 10) || 0;
-  if (els.viewRejects.classList.contains("view--hidden")) {
-    renderPhotos(applyFilters(allPhotos));
-  } else {
-    // Reject conditions must still apply — a bare applyFilters would show
-    // every photo on the rejects page (C-19.11).
-    renderPhotos(applyRejectConds(applyFilters(allRejects)));
-  }
-});
+// Rejects rating filter uses the same activeRatings Set as the photos view.
+// The checkbox panel lives inside #reject-cond-panel and mirrors #color-filter.
 
 // Both "Filter" buttons (photos + rejects) open the same global panel,
 // anchored under whichever button was clicked.
@@ -2421,6 +2411,29 @@ listen("reject-analysis-complete", () => {
   loadRejects();
 });
 
+function readRejectRatings() {
+  activeRatings.clear();
+  els.ratingFilterRejects.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    if (cb.checked) activeRatings.add(parseInt(cb.value, 10));
+  });
+}
+
+function renderRejectRatings() {
+  if (!els.ratingFilterRejects) return;
+  els.ratingFilterRejects.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.checked = activeRatings.has(parseInt(cb.value, 10));
+  });
+}
+
+els.ratingFilterRejects?.addEventListener("change", () => {
+  readRejectRatings();
+  if (els.viewRejects.classList.contains("view--hidden")) {
+    renderPhotos(applyFilters(allPhotos));
+  } else {
+    renderPhotos(applyRejectConds(applyFilters(allRejects)));
+  }
+});
+
 function renderRejectConds() {
   els.rejectCondItems.textContent = "";
   for (const c of REJECT_CONDS) {
@@ -2464,6 +2477,10 @@ els.btnRejectCond.addEventListener("click", (e) => {
 els.btnRejectCondClear.addEventListener("click", () => {
   activeRejectConds.clear();
   renderRejectConds();
+  activeRatings.clear();
+  for (let i = 0; i <= 5; i++) activeRatings.add(i);
+  renderRejectRatings();
+  updateFilterButton();
   els.btnRejectCond.classList.remove("searchbar__filter--active");
 });
 document.addEventListener("click", (e) => {

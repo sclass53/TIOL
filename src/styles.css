@@ -1069,10 +1069,12 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 24px 32px;
+  margin-left: 12px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 760px;
 }
 /* Never squeeze children (e.g. the debug log panel) when content overflows —
    the container must scroll instead. */
@@ -1288,7 +1290,9 @@ html, body {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 600;
   display: flex;
   align-items: center;
@@ -1304,8 +1308,8 @@ html, body {
   max-width: 90vw;
   max-height: 85vh;
   overflow-y: auto;
-  background: var(--bg-elevated);
-  border: 1px solid var(--separator);
+  background: color-mix(in srgb, var(--menu-bg-custom) 12%, rgba(255,255,255,0.06));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius);
   padding: 16px;
   display: flex;
