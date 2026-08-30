@@ -155,6 +155,7 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0 24px;
 }
 
 /* The active view always sits above the hidden ones. */
@@ -173,6 +174,7 @@ html, body {
 /* Search bar */
 .searchbar {
   padding: 12px 16px;
+  margin: 0 -24px;
   border-bottom: 1px solid var(--separator);
   display: flex;
   gap: 8px;
@@ -180,6 +182,34 @@ html, body {
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.searchbar__mode-segment {
+  flex: 0 0 auto;
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 3px;
+}
+.searchbar__mode-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.searchbar__mode-btn:hover {
+  color: var(--text-primary);
+}
+.searchbar__mode-btn--active {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .searchbar__input {

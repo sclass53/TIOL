@@ -23,13 +23,12 @@
       <section class="view" id="view-photos">
         <div class="searchbar">
           <input class="searchbar__input" id="search-input" type="text" data-i18n-placeholder="search.name.placeholder" />
-          <select class="searchbar__mode" id="search-mode" title="">
-            <option value="semantic" data-i18n="search.mode.semantic">语义搜索</option>
-            <option value="tag" data-i18n="search.mode.tag">标签搜索</option>
-          </select>
+          <div class="searchbar__mode-segment" id="search-mode">
+            <button class="btn searchbar__mode-btn" data-mode="semantic" data-i18n="search.mode.semantic">语义搜索</button>
+            <button class="btn searchbar__mode-btn" data-mode="tag" data-i18n="search.mode.tag">标签搜索</button>
+          </div>
           <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn btn--ghost searchbar__filter" id="btn-color-filter" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
-          <input class="searchbar__input" id="semantic-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
           <button class="btn searchbar__select" id="btn-select-mode" data-i18n="photos.selectMode">多选</button>
         </div>
         <div class="grid" id="photo-grid"></div>

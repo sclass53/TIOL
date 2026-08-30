@@ -70,6 +70,7 @@ const els = {
   editCancel: document.getElementById("edit-cancel"),
   searchInput: document.getElementById("search-input"),
   searchMode: document.getElementById("search-mode"),
+  searchModeBtns: document.querySelectorAll("#search-mode .searchbar__mode-btn"),
   semanticSearchInput: document.getElementById("semantic-search-input"),
   btnSelectMode: document.getElementById("btn-select-mode"),
   selectionBar: document.getElementById("selection-bar"),
@@ -2226,12 +2227,25 @@ function scheduleSearch() {
 }
 els.searchInput.addEventListener("input", scheduleSearch);
 els.semanticSearchInput.addEventListener("input", scheduleSearch);
-els.searchMode.addEventListener("change", scheduleSearch);
+function setSearchMode(mode) {
+  els.searchModeBtns.forEach((btn) => {
+    btn.classList.toggle("searchbar__mode-btn--active", btn.dataset.mode === mode);
+  });
+}
+
+els.searchMode.addEventListener("click", (e) => {
+  const btn = e.target.closest(".searchbar__mode-btn");
+  if (!btn) return;
+  setSearchMode(btn.dataset.mode);
+  scheduleSearch();
+});
+// Default to semantic on startup.
+setSearchMode("semantic");
 
 async function runSearch() {
   const q2 = els.semanticSearchInput.value.trim();
   const qName = els.searchInput.value.trim();
-  const mode = els.searchMode.value;
+  const mode = els.searchMode.querySelector(".searchbar__mode-btn--active")?.dataset.mode || "semantic";
   if (q2) {
     try {
       const res = await invoke("search", { query: q2, mode });
