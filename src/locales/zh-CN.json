@@ -188,6 +188,7 @@
     "effects": "特效",
     "fxAnim": "动画",
     "fxShadow": "阴影",
+      "fxGlass": "液态玻璃",
     "hwDecode": "硬件加速解码",
     "hwDecodeHint": "更改后需重启应用生效",
     "restart": "重启应用",

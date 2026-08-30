@@ -47,6 +47,8 @@ const els = {
   toggleFxShadow: document.getElementById("toggle-fx-shadow"),
   fxAnimState: document.getElementById("fx-anim-state"),
   fxShadowState: document.getElementById("fx-shadow-state"),
+  toggleFxGlass: document.getElementById("toggle-fx-glass"),
+  fxGlassState: document.getElementById("fx-glass-state"),
   toggleHwDecode: document.getElementById("toggle-hw-decode"),
   hwDecodeHint: document.getElementById("hw-decode-hint"),
   btnRestart: document.getElementById("btn-restart"),
@@ -227,15 +229,16 @@ const MENU_BG_KEY = "menu_bg_color";
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  if (theme === "liquid-glass") {
-    document.body.classList.add("theme-liquid-glass");
-  } else {
-    document.body.classList.remove("theme-liquid-glass");
-  }
 }
 function initTheme() {
   let saved = "dark";
   try { saved = localStorage.getItem(THEME_KEY) || "dark"; } catch (e) {}
+  // Legacy: the old "liquid-glass" theme is now split into dark/light + glass toggle.
+  if (saved === "liquid-glass") {
+    saved = "dark";
+    try { localStorage.setItem(THEME_KEY, "dark"); } catch (e) {}
+    try { localStorage.setItem(FX_GLASS_KEY, "1"); } catch (e) {}
+  }
   applyTheme(saved);
 }
 
@@ -271,6 +274,8 @@ els.themeOptions.addEventListener("click", (ev) => {
 // --- FX toggles (C-19.11): animations / shadows — localStorage, default ON ---
 const FX_ANIM_KEY = "tiol-fx-anim";
 const FX_SHADOW_KEY = "tiol-fx-shadow";
+const FX_GLASS_KEY = "tiol-fx-glass";
+const FX_GLASS_KEY = "tiol-fx-glass";
 
 function applyFx() {
   let anim = "1";
@@ -296,6 +301,19 @@ els.toggleFxShadow.addEventListener("click", () => {
   const next = ((localStorage.getItem(FX_SHADOW_KEY) || "1") === "1") ? "0" : "1";
   try { localStorage.setItem(FX_SHADOW_KEY, next); } catch (e) {}
   applyFx();
+});
+
+function applyFxGlass() {
+  const glass = (localStorage.getItem(FX_GLASS_KEY) || "1") === "1";
+  document.body.classList.toggle("fx-glass", glass);
+  if (els.fxGlassState) els.fxGlassState.textContent = t(glass ? "settings.on" : "settings.off");
+  if (els.toggleFxGlass) els.toggleFxGlass.classList.toggle("btn--active", glass);
+}
+
+els.toggleFxGlass?.addEventListener("click", () => {
+  const next = ((localStorage.getItem(FX_GLASS_KEY) || "1") === "1") ? "0" : "1";
+  try { localStorage.setItem(FX_GLASS_KEY, next); } catch (e) {}
+  applyFxGlass();
 });
 
 els.menuBgColor?.addEventListener("input", (ev) => {
@@ -2793,6 +2811,7 @@ function onboardingOnPhotosClicked() {
   renderRejectRatings();
     initTheme();
   applyFx();
+  applyFxGlass();
   // Debug flag gates AI-confidence badges — read it before first render.
   try {
     debugMode = (await invoke("get_setting", { key: "debug" })) === "1";

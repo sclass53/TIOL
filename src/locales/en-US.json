@@ -188,6 +188,7 @@
     "effects": "Effects",
     "fxAnim": "Animation",
     "fxShadow": "Shadows",
+      "fxGlass": "Liquid Glass",
     "hwDecode": "Hardware decoding",
     "hwDecodeHint": "Restart the app for the change to take effect",
     "restart": "Restart App",

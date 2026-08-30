@@ -810,8 +810,7 @@ html, body {
 }
 
 /* Liquid-glass theme overrides */
-.theme-liquid-glass .color-filter,
-[data-theme="liquid-glass"] .color-filter {
+.fx-glass .color-filter {
   background: color-mix(in srgb, var(--menu-bg-custom) 28%, rgba(255,255,255,0.08));
   backdrop-filter: blur(28px) saturate(200%);
   -webkit-backdrop-filter: blur(28px) saturate(200%);
@@ -819,17 +818,14 @@ html, body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25), inset 0 0 0 1px rgba(255,255,255,0.10);
   border-radius: 14px;
 }
-.theme-liquid-glass .color-filter__title,
-[data-theme="liquid-glass"] .color-filter__title {
+.fx-glass .color-filter__title {
   color: #1c1c1e;
 }
-.theme-liquid-glass .color-filter__rating label,
-[data-theme="liquid-glass"] .color-filter__rating label {
+.fx-glass .color-filter__rating label {
   color: #1c1c1e;
   background: rgba(255, 255, 255, 0.35);
 }
-.theme-liquid-glass .color-filter__rating label:hover,
-[data-theme="liquid-glass"] .color-filter__rating label:hover {
+.fx-glass .color-filter__rating label:hover {
   background: rgba(255, 255, 255, 0.55);
 }
 
@@ -1807,11 +1803,11 @@ body.fx-anim-off .tagging-badge {
   background: rgba(255, 255, 255, 0.25);
 }
 
-[data-theme="liquid-glass"] .sidebar,
-[data-theme="liquid-glass"] .searchbar,
-[data-theme="liquid-glass"] .toolbar,
-[data-theme="liquid-glass"] .card,
-[data-theme="liquid-glass"] .statusbar {
+.fx-glass .sidebar,
+.fx-glass .searchbar,
+.fx-glass .toolbar,
+.fx-glass .card,
+.fx-glass .statusbar {
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
