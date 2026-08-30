@@ -3,6 +3,18 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.12 · 2025-08 — 入场动画：淡入 + 略微下滑（可开关）
+
+**需求**：每个图片 card、多选 pill、各类弹出式菜单出现时有动画——淡入且"略微向下滑动"（常见 web UI 入场效果），并复用设置里已有的「动画」开关控制。
+
+**实现**：
+
+1. **关键帧**：`fxIn`（无静态 transform 的元素：淡入 + `translateY(-8px → 0)`）、`fxInCenter`（保留 `translateX(-50%)` 居中的元素）、`fxFade`（遮罩纯淡入）。动画结束后回到静态样式，无跳变。
+2. **覆盖范围**：照片卡片（0.3s + 组内 stagger `--i`，每张 8ms、上限 20 步）、多选 pill（主栏/次栏）、筛选面板、废片条件面板、对话框、对话框遮罩、右键菜单（0.15s 快）、预览面板、toast、更新横幅、打标徽章。
+3. **stagger**：`renderChunk` 为每张卡设 `--i`（组内相对索引，滚动追加的批次从 0 重新计数），CSS `animation-delay: calc(min(var(--i),20) * 8ms)` 上限 160ms——首屏批量渲染呈瀑布式出现，滚动加载的批次同样生效。
+4. **开关**：全部动画挂在 `body.fx-anim-off` 下（`animation: none`），即设置页「特效 > 动画」开关直接控制；update-banner 原有的 `bannerSlide` 动画被 `fxInCenter` 取代（原为纯下滑、无淡入，且与开关无关）。
+5. **兼容**：`content-visibility: auto` 的离屏卡片不播放动画（时间推进、进入视口即终态），不影响滚动性能；卡片动画用 `fill: both` 保证延迟期间占位透明，布局/滚动高度计算不受影响。
+
 ## C-19.11 · 2025-08 — 设置页特效开关（动画 / 阴影）+ 多选 pill 跨页修复
 
 **需求**：① 设置里 language 和主题拆成两行；② 下方新增一行「特效」，可开关「动画」和「阴影」（一行两个开关），默认开启；③ 废片页多选不显示底部 pill；④ 主页开多选后切到废片页，第一次点击"多选"是退出而非进入——切页时应退出多选；⑤ 废片页删除照片后一瞬间闪现全部照片；⑥ 废片删除后不应退出多选模式。
@@ -19,7 +31,8 @@
 8. **废片页删除闪烁（根因）**：`loadPhotos()` 直接渲染到 `currentGrid`——从废片页触发刷新时（删除/scan-complete），全量照片被画进废片网格，随后 `loadRejects()` 才覆盖，造成"所有照片闪现"。修复：`loadPhotos()` 固定临时切换渲染到 photoGrid；删除 handler 与 scan-complete 中 `loadPhotos`/`loadRejects` 改为 `await` 串行执行。
 9. **删除后保持多选**：删除 handler 不再 `setSelectMode(false)`；从 `selectedIds` 移除已删除 id，重渲染后 `applySelectionToGrid(rejectGrid)` 重新标记选中卡片并刷新计数——可连续删除多批。
 10. **顺手修复**：废片页星数筛选分支缺 `applyRejectConds`（会显示全部照片）——已补。
-11. **i18n**：`settings.effects / fxAnim / fxShadow`（中英同步），messages.js 重新生成。
+11. **启动渲染不全修复（根因）**：`loadPhotos` 渲染后注册的 `requestAnimationFrame(fillGridIfNeeded)` 可能赶在 webview **首次布局之前**执行——`clientHeight=0` 使填充循环立即退出，之后没有任何触发源，网格停在首屏几行且无滚动条（滚动也无法自救），必须切页（布局已就绪后 switchView 重新触发）才恢复。修复：① `fillGridIfNeeded` 退出时若 `clientHeight===0` 且未渲染完，逐帧自我重试直到布局就绪；② boot 后 300ms/1.5s 定时兜底调用（幂等）；③ 窗口 resize 也触发填充（窗口放大同样会欠填）。
+12. **i18n**：`settings.effects / fxAnim / fxShadow`（中英同步），messages.js 重新生成。
 
 ## C-19.10 · 2025-08 — 侧边栏指示条动画 + 滚动位置保持 + 多选栏双 pill
 

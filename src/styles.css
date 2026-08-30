@@ -1341,20 +1341,10 @@ html, body {
   border-radius: 12px;
   padding: 10px 16px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  animation: bannerSlide 0.25s ease;
+  /* entry animation moved to the C-19.12 fxInCenter block (keeps translateX) */
 }
 .update-banner[hidden] {
   display: none;
-}
-@keyframes bannerSlide {
-  from {
-    transform: translate(-50%, -12px);
-    opacity: 0;
-  }
-  to {
-    transform: translate(-50%, 0);
-    opacity: 1;
-  }
 }
 .update-banner__text {
   color: var(--text-primary);
@@ -1523,4 +1513,81 @@ body.fx-shadow-off .update-banner,
 body.fx-shadow-off .tagging-badge,
 body.fx-shadow-off .onboarding-bubble {
   box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Entry animations (C-19.12): fade-in + slight downward slide for cards,
+   the multi-select pills and every popup menu — all gated by the existing
+   "Effects > Animation" switch (body.fx-anim-off turns them off).
+   Elements with a static transform get a dedicated keyframe that keeps it. */
+@keyframes fxIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fxInCenter {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes fxFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Photo cards: stagger by in-chunk index (--i set in renderChunk), capped so
+   big batches don't wait forever. */
+.card {
+  animation: fxIn 0.3s ease both;
+  animation-delay: calc(min(var(--i, 0), 20) * 8ms);
+}
+
+/* Multi-select pills */
+.selection-bar {
+  animation: fxInCenter 0.22s ease;
+}
+.selection-bar--secondary {
+  animation: fxIn 0.22s ease;
+}
+
+/* Popup menus / panels / dialogs / overlays */
+.color-filter,
+.reject-cond-panel {
+  animation: fxIn 0.2s ease;
+}
+.dialog {
+  animation: fxIn 0.22s ease;
+}
+.dialog-overlay,
+.preview-overlay {
+  animation: fxFade 0.18s ease;
+}
+.ctx-menu {
+  animation: fxIn 0.15s ease;
+}
+.preview {
+  animation: fxIn 0.25s ease;
+}
+.toast {
+  animation: fxInCenter 0.2s ease;
+}
+.update-banner {
+  animation: fxInCenter 0.25s ease;
+}
+.tagging-badge {
+  animation: fxIn 0.2s ease;
+}
+
+/* "Effects > Animation" OFF: no entry animations anywhere (C-19.12). */
+body.fx-anim-off .card,
+body.fx-anim-off .selection-bar,
+body.fx-anim-off .color-filter,
+body.fx-anim-off .reject-cond-panel,
+body.fx-anim-off .dialog,
+body.fx-anim-off .dialog-overlay,
+body.fx-anim-off .preview-overlay,
+body.fx-anim-off .ctx-menu,
+body.fx-anim-off .preview,
+body.fx-anim-off .toast,
+body.fx-anim-off .update-banner,
+body.fx-anim-off .tagging-badge {
+  animation: none !important;
 }

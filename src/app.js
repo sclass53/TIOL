@@ -801,8 +801,12 @@ function renderChunk(limit = CHUNK_APPEND) {
   const total = currentPhotos.length;
   if (renderedCount >= total) return;
   const end = Math.min(renderedCount + limit, total);
-  for (let i = renderedCount; i < end; i++) {
-    currentGrid.appendChild(buildCard(currentPhotos[i]));
+  const startIdx = renderedCount;
+  for (let i = startIdx; i < end; i++) {
+    const card = buildCard(currentPhotos[i]);
+    // Entry-animation stagger index within this chunk (C-19.12); capped in CSS.
+    card.style.setProperty("--i", String(i - startIdx));
+    currentGrid.appendChild(card);
   }
   renderedCount = end;
   els.photoStatus.textContent =
@@ -1436,7 +1440,19 @@ function fillGridIfNeeded() {
       return;
     }
   }
+  // Startup trap (C-19.11): the rAF from loadPhotos can fire BEFORE the
+  // webview's first layout — clientHeight is 0, the loop exits immediately
+  // and nothing ever re-triggers it, leaving only the initial rows rendered
+  // (no scrollbar either, so scrolling can't recover either). Retry every
+  // frame until the grid has a real height.
+  if (renderedCount < currentPhotos.length && g.clientHeight === 0) {
+    requestAnimationFrame(fillGridIfNeeded);
+  }
 }
+
+// Window resize can also leave the viewport under-filled — same idempotent
+// fill (C-19.11).
+window.addEventListener("resize", () => requestAnimationFrame(fillGridIfNeeded));
 
 // When the user scrolls or jumps past the rendered region, keep filling until
 // the area they are looking at (plus a safety margin) is covered. Bounded per
@@ -2711,6 +2727,12 @@ function onboardingOnPhotosClicked() {
   }
   loadPhotos();
   loadFolders();
+  // Startup-fill fallback (C-19.11): the rAF inside loadPhotos may fire
+  // before the webview's first layout and never get re-triggered, leaving
+  // only a couple of rows rendered until the user switches pages. The fill
+  // is idempotent and stops once the viewport is covered — retry on timers.
+  setTimeout(fillGridIfNeeded, 300);
+  setTimeout(fillGridIfNeeded, 1500);
   // Position the active-indicator WITHOUT the glide transition at startup —
   // boot never calls switchView, so the bar would otherwise sit at the top
   // of the sidebar (above the camera icon) until the first view switch.
