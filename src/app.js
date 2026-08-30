@@ -2786,6 +2786,11 @@ function onboardingOnPhotosClicked() {
     console.error(e);
   }
   applyStaticI18n();
+  // Re-render dynamic i18n content that was created at module-load time with
+  // the default (en-US) locale before initI18n resolved the saved language.
+  renderFilterDots();
+  renderRejectConds();
+  renderRejectRatings();
     initTheme();
   applyFx();
   // Debug flag gates AI-confidence badges — read it before first render.
