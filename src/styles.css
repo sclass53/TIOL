@@ -1,13 +1,14 @@
 :root {
-  --bg-primary: #1C1C1E;
-  --bg-surface: #2C2C2E;
-  --bg-elevated: #3A3A3C;
-  --separator: #48484A;
+  --bg-primary: #0f0f12;
+  --bg-surface: rgba(255, 255, 255, 0.06);
+  --bg-elevated: rgba(255, 255, 255, 0.10);
+  --separator: rgba(255, 255, 255, 0.12);
   --menu-bg-custom: #ffffff;
   --text-primary: #F2F2F7;
   --text-secondary: #8E8E93;
   --accent: #0A84FF;
-  --radius: 4px;
+  --accent-glow: rgba(10, 132, 255, 0.45);
+  --radius: 12px;
   --font: -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -15,7 +16,7 @@
 
 html, body {
   height: 100%;
-  background: var(--bg-primary);
+  background: radial-gradient(ellipse at top left, #1a1a2e 0%, #0f0f12 50%, #0a0a0f 100%);
   color: var(--text-primary);
   font-family: var(--font);
   font-size: 14px;
@@ -26,7 +27,7 @@ html, body {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 /* Sidebar — collapsible (C-19.2): icons-only when collapsed, labels shown
@@ -34,15 +35,17 @@ html, body {
 .sidebar {
   width: 48px;
   min-width: 48px;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.04);
   border-right: 1px solid var(--separator);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
   padding-top: 16px;
   gap: 8px;
-  overflow: hidden; /* labels must never bleed out while collapsing */
-  transition: width 0.22s ease, min-width 0.22s ease;
+  overflow: hidden;
+  transition: width 0.22s ease, min-width 0.22s ease, background 0.25s ease;
 }
 .sidebar--open {
   width: 172px;
@@ -173,19 +176,28 @@ html, body {
   border-bottom: 1px solid var(--separator);
   display: flex;
   gap: 8px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32); /* FX shadow (C-19.11) */
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
 .searchbar__input {
   flex: 1;
   min-width: 0;
   height: 36px;
-  background: var(--bg-surface);
-  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   color: var(--text-primary);
   padding: 0 12px;
   outline: none;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.searchbar__input:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
 }
 
 .searchbar__input::placeholder { color: var(--text-secondary); }
@@ -304,28 +316,6 @@ html, body {
   font-size: 12px;
   font-weight: 500;
   opacity: 0.8;
-}
-
-/* Close button for the filter panel */
-.color-filter__close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  line-height: 22px;
-  text-align: center;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary);
-  font-size: 14px;
-  cursor: pointer;
-  -webkit-appearance: none;
-}
-.color-filter__close:hover {
-  background: rgba(255, 255, 255, 0.25);
 }
 
 /* Star rating filter inside the dropdown (C-17) */
@@ -1720,4 +1710,85 @@ body.fx-anim-off .toast,
 body.fx-anim-off .update-banner,
 body.fx-anim-off .tagging-badge {
   animation: none !important;
+}
+
+/* ============================================================
+   Liquid-glass + gradient global enhancements (C-19.12)
+   ============================================================ */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.color-filter[hidden] { display: none; }
+.color-filter:not([hidden]) {
+  animation: scaleIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.card {
+  animation: fadeIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.dialog, .preview {
+  animation: scaleIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.toolbar, .settings__row, .folder-item, .tags__add {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.toolbar:hover, .settings__row:hover, .folder-item:hover, .tags__add:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.statusbar {
+  background: rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--separator);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="liquid-glass"] .sidebar,
+[data-theme="liquid-glass"] .searchbar,
+[data-theme="liquid-glass"] .toolbar,
+[data-theme="liquid-glass"] .card,
+[data-theme="liquid-glass"] .statusbar {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.selection-bar {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+.selection-bar--secondary {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
 }

@@ -1456,17 +1456,6 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   renderPhotos(applyFilters(allPhotos));
 });
 
-// Close filter panel with the explicit X button (C-19.12).
-document.getElementById("btn-color-filter-close").addEventListener("click", () => {
-  colorFilterPanel.hidden = true;
-});
-
-// Stop clicks inside the panel from bubbling to the document listener,
-// so checking multiple ratings/lenses/colors keeps the panel open.
-colorFilterPanel.addEventListener("click", (e) => {
-  e.stopPropagation();
-});
-
 document.addEventListener("click", (e) => {
   if (
     !colorFilterPanel.hidden &&
