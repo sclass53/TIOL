@@ -83,6 +83,10 @@ fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {    std::threa
                 if let Err(e) = utils::generate_thumbnail(p, &thumb_path) {
                     log::debug!("prewarm thumb failed for {}: {}", path, e);
                 }
+                // Yield a tick so foreground get_thumbnail requests (visible
+                // cards / preview) are not starved by the prewarm workers
+                // (C-19.15).
+                std::thread::sleep(std::time::Duration::from_millis(2));
             });
         }
         let mut queued = 0usize;

@@ -101,11 +101,15 @@
            UI instead of the semantic/tag mode; conditions are UI-only for now -->
       <section class="view view--hidden" id="view-rejects">
         <div class="searchbar">
-          <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
-          <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-rejects" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
-          <button class="btn btn--ghost searchbar__filter" id="btn-reject-cond" data-i18n="rejects.cond">废片条件</button>
-          <button class="btn btn--ghost searchbar__filter" id="btn-rating-filter-rejects" data-i18n="photos.ratingBtn" data-i18n-title="photos.ratingFilter">星数</button>
-          <button class="btn searchbar__select" id="btn-select-mode-rejects" data-i18n="photos.selectMode">多选</button>
+          <div class="searchbar__bubble searchbar__bubble--search">
+            <input class="searchbar__input" id="reject-search-input" type="text" data-i18n-placeholder="search.semantic.placeholder" />
+          </div>
+          <div class="searchbar__bubble searchbar__bubble--actions">
+            <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-rejects" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
+            <button class="btn btn--ghost searchbar__filter" id="btn-reject-cond" data-i18n="rejects.cond">废片条件</button>
+            <button class="btn btn--ghost searchbar__filter" id="btn-rating-filter-rejects" data-i18n="photos.ratingBtn" data-i18n-title="photos.ratingFilter">星数</button>
+            <button class="btn searchbar__select" id="btn-select-mode-rejects" data-i18n="photos.selectMode">多选</button>
+          </div>
         </div>
         <div class="grid" id="reject-grid"></div>
         <div class="statusbar" id="reject-status">0 photos</div>
