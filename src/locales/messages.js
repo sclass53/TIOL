@@ -5,6 +5,12 @@ export const MESSAGES = {
     "app": {
       "title": "TIOL - AI 本地照片管理"
     },
+    "titlebar": {
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "还原",
+      "close": "关闭"
+    },
     "nav": {
       "photos": "照片",
       "folders": "目录",
@@ -61,12 +67,8 @@ export const MESSAGES = {
       "filterFocalMax": "最大 mm",
       "filterEmpty": "没有符合筛选条件的照片",
       "ratingFilter": "按评分筛选",
-      "ratingAll": "全部",
-      "rating1": "≥ 1 星",
-      "rating2": "≥ 2 星",
-      "rating3": "≥ 3 星",
-      "rating4": "≥ 4 星",
-      "rating5": "≥ 5 星",
+      "ratingBtn": "星数",
+      "ratingNone": "无星",
       "status": {
         "count": "{count} 张照片",
         "partial": "{shown} / {total} 张照片"
@@ -109,6 +111,8 @@ export const MESSAGES = {
       }
     },
     "menu": {
+      "file": "文件",
+      "quit": "退出",
       "reveal": "在文件资源管理器中显示",
       "wallpaper": "设为壁纸",
       "wallpaperSet": "壁纸已设置"
@@ -188,6 +192,7 @@ export const MESSAGES = {
       "effects": "特效",
       "fxAnim": "动画",
       "fxShadow": "阴影",
+      "fxGlass": "液态玻璃",
       "hwDecode": "硬件加速解码",
       "hwDecodeHint": "更改后需重启应用生效",
       "restart": "重启应用",
@@ -215,6 +220,12 @@ export const MESSAGES = {
   "en-US": {
     "app": {
       "title": "TIOL - AI Local Photo Manager"
+    },
+    "titlebar": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "close": "Close"
     },
     "nav": {
       "photos": "Photos",
@@ -272,12 +283,8 @@ export const MESSAGES = {
       "filterFocalMax": "Max mm",
       "filterEmpty": "No photos match the filters",
       "ratingFilter": "Filter by rating",
-      "ratingAll": "All",
-      "rating1": "1+ star",
-      "rating2": "2+ stars",
-      "rating3": "3+ stars",
-      "rating4": "4+ stars",
-      "rating5": "5 stars",
+      "ratingBtn": "Rating",
+      "ratingNone": "No stars",
       "status": {
         "count": "{count} photos",
         "partial": "{shown} / {total} photos"
@@ -320,6 +327,8 @@ export const MESSAGES = {
       }
     },
     "menu": {
+      "file": "File",
+      "quit": "Quit",
       "reveal": "Show in File Explorer",
       "wallpaper": "Set as wallpaper",
       "wallpaperSet": "Wallpaper set"
@@ -399,6 +408,7 @@ export const MESSAGES = {
       "effects": "Effects",
       "fxAnim": "Animation",
       "fxShadow": "Shadows",
+      "fxGlass": "Liquid glass",
       "hwDecode": "Hardware decoding",
       "hwDecodeHint": "Restart the app for the change to take effect",
       "restart": "Restart App",

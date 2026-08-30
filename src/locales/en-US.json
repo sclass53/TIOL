@@ -2,6 +2,12 @@
   "app": {
     "title": "TIOL - AI Local Photo Manager"
   },
+  "titlebar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
   "nav": {
     "photos": "Photos",
     "folders": "Folders",
@@ -58,12 +64,8 @@
     "filterFocalMax": "Max mm",
     "filterEmpty": "No photos match the filters",
     "ratingFilter": "Filter by rating",
-    "ratingAll": "All",
-    "rating1": "1+ star",
-    "rating2": "2+ stars",
-    "rating3": "3+ stars",
-    "rating4": "4+ stars",
-    "rating5": "5 stars",
+    "ratingBtn": "Rating",
+    "ratingNone": "No stars",
     "status": {
       "count": "{count} photos",
       "partial": "{shown} / {total} photos"
@@ -106,6 +108,8 @@
     }
   },
   "menu": {
+    "file": "File",
+    "quit": "Quit",
     "reveal": "Show in File Explorer",
     "wallpaper": "Set as wallpaper",
     "wallpaperSet": "Wallpaper set"
@@ -185,6 +189,7 @@
     "effects": "Effects",
     "fxAnim": "Animation",
     "fxShadow": "Shadows",
+    "fxGlass": "Liquid glass",
     "hwDecode": "Hardware decoding",
     "hwDecodeHint": "Restart the app for the change to take effect",
     "restart": "Restart App",

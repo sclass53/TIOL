@@ -3,6 +3,31 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.14 · 2025-08 — 搜索栏 bubble 化 + 星数多选筛选 + 全屏按钮 SVG
+
+**需求**：① 最大化按钮偏小（字形差异）；② 顶部搜索栏拆成若干圆角 bubble：文件名搜索、语义/标签+搜索、筛选+星数+多选（带阴影，可开关）；③ 星数筛选改成 0~5 星各自勾选（可同时筛 1 星和 3 星）。
+
+**实现**：
+
+1. **全屏按钮**：`□`/`❐` 字形在 Segoe UI 渲染偏小——改为 inline SVG（13px 方框/双框），`updateWinMaxBtn` 按窗口状态切换单框/双框图标。
+2. **搜索栏 bubble 化**（photos 页）：`.searchbar__bubble` 圆角 pill（radius 20px，`--bg-surface` 底 + 边框 + 阴影），三组：文件名 | 语义/标签模式+输入 | 筛选+星数+多选；bubble 内 input/select 背景透明。阴影挂 `fx-shadow-off`（设置里「特效 > 阴影」开关控制），浅色主题有对应弱阴影；`.searchbar` 原 border-bottom/阴影移除。
+3. **星数多选**：photos/rejects 两个「星数」按钮共用同一面板（复用 `.color-filter` 样式与 fxIn 动画），面板内 0~5 星各一个勾选框（金色 ★×n，0=「无星」）+ 清除按钮；`activeRatings` Set 替代原 `minRating`（`{1,3}` = 1 星和 3 星照片都保留，无星照片需勾选 0 才显示）。空集 = 不过滤；按钮勾选实时重渲染当前视图（废片页仍叠加废片条件）。
+4. **i18n**：`photos.ratingBtn / ratingNone`；删除已无引用的 `ratingAll / rating1..5`（原 select 移除）。
+
+## C-19.13 · 2025-08 — 无边框窗口 + 内嵌标题栏（Windows/Linux）
+
+**需求**：去掉 Windows 默认窗口标题栏，最小化/关闭等按钮直接嵌入窗口内部。
+
+**实现**：
+
+1. **无边框窗口**：`main.rs` 窗口构建时按平台覆盖 `decorations`——Windows/Linux `false`（配合前端自绘标题栏），macOS 保持 `true`（保留原生红绿灯，自绘交通灯工作量与收益不成比例）。
+2. **内嵌标题栏**（`.titlebar`，36px 全宽）：左侧 `data-tauri-drag-region` 拖拽区（拖动移动窗口、双击最大化，Tauri 内置）+ 标题文字；右侧三个按钮：最小化（`─`）、最大化/还原（`□`/`❐`，窗口 resize 时同步图标与 i18n tooltip）、关闭（`✕`，hover 红色 `#e81123`）。
+3. **窗口控制**：`window.__TAURI__.window.getCurrentWindow()`（withGlobalTauri，无新增依赖）——`minimize()/toggleMaximize()/close()`，`onResized` 监听同步最大化按钮状态。
+4. **平台适配**：`navigator.userAgent` 检测 macOS → `body.platform-mac` 隐藏标题栏（CSS）。
+5. **布局**：body 改纵向 flex，`.titlebar` 固定 36px，`.app` 弹性占满剩余空间。
+6. **权限**：窗口控制属 `core:default`（capabilities 已有），无需新增。
+7. **i18n**：`titlebar.minimize/maximize/restore/close`（中英同步）。
+
 ## C-19.12 · 2025-08 — 入场动画：淡入 + 略微下滑（可开关）
 
 **需求**：每个图片 card、多选 pill、各类弹出式菜单出现时有动画——淡入且"略微向下滑动"（常见 web UI 入场效果），并复用设置里已有的「动画」开关控制。

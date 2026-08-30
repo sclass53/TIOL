@@ -2,6 +2,12 @@
   "app": {
     "title": "TIOL - AI 本地照片管理"
   },
+  "titlebar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
   "nav": {
     "photos": "照片",
     "folders": "目录",
@@ -58,12 +64,8 @@
     "filterFocalMax": "最大 mm",
     "filterEmpty": "没有符合筛选条件的照片",
     "ratingFilter": "按评分筛选",
-    "ratingAll": "全部",
-    "rating1": "≥ 1 星",
-    "rating2": "≥ 2 星",
-    "rating3": "≥ 3 星",
-    "rating4": "≥ 4 星",
-    "rating5": "≥ 5 星",
+    "ratingBtn": "星数",
+    "ratingNone": "无星",
     "status": {
       "count": "{count} 张照片",
       "partial": "{shown} / {total} 张照片"
@@ -106,6 +108,8 @@
     }
   },
   "menu": {
+    "file": "文件",
+    "quit": "退出",
     "reveal": "在文件资源管理器中显示",
     "wallpaper": "设为壁纸",
     "wallpaperSet": "壁纸已设置"
@@ -185,6 +189,7 @@
     "effects": "特效",
     "fxAnim": "动画",
     "fxShadow": "阴影",
+    "fxGlass": "液态玻璃",
     "hwDecode": "硬件加速解码",
     "hwDecodeHint": "更改后需重启应用生效",
     "restart": "重启应用",

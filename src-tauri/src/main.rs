@@ -1386,31 +1386,38 @@ fn main() {
                         .expect("invalid error page url");
                 let redirected = Arc::new(AtomicBool::new(false));
                 let redirected_hook = redirected.clone();
-                tauri::webview::WebviewWindowBuilder::from_config(app.handle(), window_cfg)?
-                    .additional_browser_args(hw_args)
-                    .on_page_load(move |window, payload| {
-                        if payload.event() != PageLoadEvent::Finished {
-                            return;
-                        }
-                        let url = payload.url().as_str();
-                        // Accept the app pages AND the legacy/asset scheme
-                        // ("tauri://localhost" appeared on macOS first-load,
-                        // C-11.10) — only foreign URLs redirect to the error
-                        // page.
-                        let is_app_page = url.ends_with("index.html")
-                            || url.ends_with("error.html")
-                            || url.ends_with('/')
-                            || url.starts_with("tauri://localhost")
-                            || url.contains("tauri.localhost");
-                        if !is_app_page && !redirected_hook.swap(true, Ordering::SeqCst) {
-                            log::warn!(
-                                "navigation failed or unexpected page ({}), showing in-app error page",
-                                url
-                            );
-                            let _ = window.navigate(error_url.clone());
-                        }
-                    })
-                    .build()?;
+                let builder =
+                    tauri::webview::WebviewWindowBuilder::from_config(app.handle(), window_cfg)?
+                        .additional_browser_args(hw_args)
+                        .on_page_load(move |window, payload| {
+                            if payload.event() != PageLoadEvent::Finished {
+                                return;
+                            }
+                            let url = payload.url().as_str();
+                            // Accept the app pages AND the legacy/asset scheme
+                            // ("tauri://localhost" appeared on macOS first-load,
+                            // C-11.10) — only foreign URLs redirect to the error
+                            // page.
+                            let is_app_page = url.ends_with("index.html")
+                                || url.ends_with("error.html")
+                                || url.ends_with('/')
+                                || url.starts_with("tauri://localhost")
+                                || url.contains("tauri.localhost");
+                            if !is_app_page && !redirected_hook.swap(true, Ordering::SeqCst) {
+                                log::warn!(
+                                    "navigation failed or unexpected page ({}), showing in-app error page",
+                                    url
+                                );
+                                let _ = window.navigate(error_url.clone());
+                            }
+                        });
+                // Frameless on Windows/Linux with the in-app titlebar
+                // (C-19.13); macOS keeps its native traffic lights.
+                #[cfg(target_os = "macos")]
+                let builder = builder.decorations(true);
+                #[cfg(not(target_os = "macos"))]
+                let builder = builder.decorations(false);
+                builder.build()?;
             }
 
             // ---- state ----

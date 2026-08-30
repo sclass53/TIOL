@@ -21,10 +21,134 @@ html, body {
   overflow: hidden;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom titlebar (C-19.13): frameless window — drag region + window
+   controls drawn in-app (Windows/Linux). Hidden on macOS (native lights). */
+.titlebar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--separator);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.titlebar__drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  gap: 8px;
+}
+.titlebar__icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.titlebar__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.4px;
+}
+
+/* In-app menubar (C-19.15): a menu button right of the title; classic
+   menubars don't fit the frameless look, so it's a dropdown instead. */
+.titlebar__menu {
+  position: relative;
+  margin-left: 10px;
+}
+.titlebar__menu-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.titlebar__menu-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.titlebar__menu-panel {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  z-index: 900;
+  min-width: 150px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.titlebar__menu-panel[hidden] {
+  display: none;
+}
+.titlebar__menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.titlebar__menu-item:hover {
+  background: var(--bg-surface);
+}
+/* Window controls: three separate buttons (C-19.13) */
+.titlebar__controls {
+  display: flex;
+  height: 100%;
+}
+.titlebar__btn {
+  width: 52px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.titlebar__btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.titlebar__btn--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.titlebar__svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+body.platform-mac .titlebar {
+  display: none;
+}
+
 .app {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   background: var(--bg-primary);
 }
 
@@ -89,12 +213,19 @@ html, body {
 }
 
 /* Fixed-width icon slot: text glyphs (⚙, ◀) render narrower than color
-   emojis (📷, 🗑️) — a fixed centered slot keeps every row aligned (C-19.2). */
+   emojis (📷, 🗑️) — a fixed centered slot keeps every row aligned (C-19.2).
+   Nav icons are inline Font-Awesome SVGs (C-19.14), currentColor-tinted. */
 .sidebar__icon {
   width: 20px;
   flex-shrink: 0;
   text-align: center;
   display: inline-block;
+}
+.sidebar__svg {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* Active indicator bar: a dedicated element that GLIDES between nav buttons
@@ -150,7 +281,7 @@ html, body {
   inset: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto; /* the VIEW scrolls — the searchbar sticks above the cards */
 }
 
 /* The active view always sits above the hidden ones. */
@@ -166,13 +297,94 @@ html, body {
   z-index: 0;
 }
 
-/* Search bar */
+/* Search bar — bubble groups (C-19.14): filename | semantic/tag | actions.
+   STICKY float (C-19.14): the bar itself is transparent and sticks to the
+   top while the grid scrolls under it — the bubbles hover over the photos
+   like the multi-select bar does. */
 .searchbar {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--separator);
+  position: sticky;
+  top: 0;
+  z-index: 700;
+  background: transparent;
+  /* side padding slightly NARROWER than the grid's 16px so the bubbles
+     overhang the cards a touch on each side (C-19.14) */
+  padding: 12px 12px;
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32); /* FX shadow (C-19.11) */
+  flex-wrap: wrap;
+}
+.searchbar__bubble {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  border-radius: 999px; /* fully rounded capsule (C-19.14) */
+  height: 44px;
+  padding: 3px 8px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); /* FX shadow (C-19.14) */
+}
+.searchbar__bubble .searchbar__input,
+.searchbar__bubble .searchbar__mode {
+  background: transparent;
+}
+.searchbar__bubble .searchbar__input,
+.searchbar__bubble .searchbar__mode,
+.searchbar__bubble .btn {
+  border-radius: 16px; /* match the bubble's pill radius (C-19.14) */
+}
+/* Width allocation: the middle bubble fills the row, the name and actions
+   bubbles size to their content (C-19.14). */
+.searchbar__bubble--name {
+  flex: 0 0 auto;
+}
+.searchbar__bubble--name .searchbar__input {
+  min-width: 170px;
+}
+.searchbar__bubble--search {
+  flex: 1;
+}
+/* The actions bubble has NO own background/padding — the three buttons
+   themselves form the pill (C-19.14). */
+.searchbar__bubble--actions {
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: none; /* no ring around the button group (C-19.14) */
+  border-radius: 22px; /* shadow follows the button caps, not a full capsule */
+  overflow: hidden;
+}
+.searchbar__bubble--actions .btn {
+  height: 44px; /* fill the bubble — same height as the other bubbles */
+  border: none; /* kill the ghost button's own border (white ring) */
+  border-left: 1px solid var(--separator);
+  border-radius: 0;
+  background: var(--bg-elevated);
+}
+/* The blue select button's own 36px height (defined later in the file)
+   would win — force it to fill the pill like the other two (C-19.14). */
+.searchbar__bubble--actions .btn.searchbar__select,
+.searchbar__bubble--actions .btn.searchbar__filter {
+  height: 44px;
+}
+.searchbar__bubble--actions .btn:hover {
+  background: var(--bg-surface);
+}
+.searchbar__bubble--actions .btn:first-child {
+  border-left: none;
+  border-radius: 22px 0 0 22px; /* half-circle caps (44px tall) */
+  padding-left: 18px; /* a bit more breathing room at the left edge */
+}
+.searchbar__bubble--actions .btn:last-child {
+  border-radius: 0 22px 22px 0;
+}
+/* Active filter keeps its accent fill above the group background. */
+.searchbar__bubble--actions .searchbar__filter--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff; /* .btn--ghost's dark text would otherwise win (C-19.14) */
 }
 
 .searchbar__input {
@@ -237,6 +449,22 @@ html, body {
   border-color: var(--accent);
 }
 
+/* Star-rating button: solid orange (C-19.14); active state keeps the
+   orange and adds an inner ring instead of flipping to accent blue. */
+.searchbar__bubble--actions #btn-rating-filter {
+  height: 44px; /* fill the pill like the others (C-19.14) */
+  background: #ff9500;
+  border-color: #ff9500;
+  color: #fff;
+}
+.searchbar__bubble--actions #btn-rating-filter:hover {
+  background: #e68a00;
+  border-color: #e68a00;
+}
+.searchbar__bubble--actions #btn-rating-filter.searchbar__filter--active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+
 /* Filter dropdown panel (C-14/C-15: colors + lens + focal) — positioned
    under the filter button by JS (left/top are set on open). Fixed width so
    long lens names get ellipsis instead of squashing the layout. */
@@ -265,6 +493,29 @@ html, body {
 .color-filter__dots {
   display: flex;
   gap: 10px;
+}
+/* Star-rating filter panel (C-19.14): 0-5 stars, multi-select */
+.rating-panel__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rating-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.rating-panel__item input {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.rating-panel__stars {
+  color: #ffcc00;
+  letter-spacing: 2px;
+  font-size: 14px;
 }
 .color-filter__clear {
   align-self: flex-start;
@@ -516,12 +767,14 @@ html, body {
   display: none;
 }
 
-/* Photo grid */
+/* Photo grid — cards flow inside the scrolling VIEW (C-19.14); the grid
+   itself no longer scrolls. Top padding kept small so the first row sits
+   close under the search bubbles. */
 .grid {
   flex: 1;
   position: relative; /* anchors the drag-selection box (C-13) */
-  overflow-y: auto;
-  padding: 16px;
+  overflow: visible;
+  padding: 0 16px 16px;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -533,7 +786,7 @@ html, body {
   height: 184px; /* 132px thumb + 18px star row + 34px meta (C-17) */
   background: var(--bg-surface);
   border: 1px solid var(--bg-elevated);
-  border-radius: var(--radius);
+  border-radius: 10px; /* larger corner radius (C-19.15) */
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -809,10 +1062,14 @@ html, body {
   font-size: 12px;
 }
 
-/* Status bar */
+/* Status bar — sticks to the bottom of the scrolling view (C-19.14) */
 .statusbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 700;
   height: 24px;
   border-top: 1px solid var(--separator);
+  background: var(--bg-primary);
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -1456,7 +1713,13 @@ html, body {
 /* ============================================================
    Light theme — applied via <html data-theme="light">
    ============================================================ */
+/* color-scheme: native form controls (select dropdowns, checkboxes,
+   scrollbars) follow the app theme instead of the OS (C-19.14). */
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
 html[data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #F5F5F7;
   --bg-surface: #FFFFFF;
   --bg-elevated: #E8E8ED;
@@ -1493,8 +1756,8 @@ html[data-theme="light"] .card__score {
    FX toggles (C-19.11) — driven by the settings switches, default ON.
    `body.fx-*-off` wins over the light-theme overrides above by equal-or-higher
    specificity + being last. Future animations join .fx-anim-off. */
-html[data-theme="light"] .searchbar {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+html[data-theme="light"] .searchbar__bubble {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
 }
 html[data-theme="light"] .card {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.16);
@@ -1504,7 +1767,7 @@ body.fx-anim-off .sidebar__indicator {
   transition: none;
 }
 
-body.fx-shadow-off .searchbar,
+body.fx-shadow-off .searchbar__bubble,
 body.fx-shadow-off .card,
 body.fx-shadow-off .selection-bar,
 body.fx-shadow-off .color-filter,
@@ -1513,6 +1776,38 @@ body.fx-shadow-off .update-banner,
 body.fx-shadow-off .tagging-badge,
 body.fx-shadow-off .onboarding-bubble {
   box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Liquid glass (C-19.15): every floating surface (bubbles, dropdowns,
+   dialogs) becomes an acrylic panel — translucent + backdrop blur. */
+body.fx-glass .searchbar__bubble,
+body.fx-glass .selection-bar,
+body.fx-glass .color-filter,
+body.fx-glass .dialog,
+body.fx-glass .ctx-menu,
+body.fx-glass .preview,
+body.fx-glass .toast,
+body.fx-glass .update-banner,
+body.fx-glass .tagging-badge,
+body.fx-glass .titlebar__menu-panel {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+html[data-theme="light"] body.fx-glass .searchbar__bubble,
+html[data-theme="light"] body.fx-glass .selection-bar,
+html[data-theme="light"] body.fx-glass .color-filter,
+html[data-theme="light"] body.fx-glass .dialog,
+html[data-theme="light"] body.fx-glass .ctx-menu,
+html[data-theme="light"] body.fx-glass .preview,
+html[data-theme="light"] body.fx-glass .toast,
+html[data-theme="light"] body.fx-glass .update-banner,
+html[data-theme="light"] body.fx-glass .tagging-badge,
+html[data-theme="light"] body.fx-glass .titlebar__menu-panel {
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.65);
 }
 
 /* ---------------------------------------------------------------------------

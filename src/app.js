@@ -36,6 +36,14 @@ const els = {
   navTags: document.getElementById("nav-tags"),
   navRejects: document.getElementById("nav-rejects"),
   navSettings: document.getElementById("nav-settings"),
+  // Custom titlebar (C-19.13)
+  btnWinMin: document.getElementById("btn-win-min"),
+  btnWinMax: document.getElementById("btn-win-max"),
+  btnWinClose: document.getElementById("btn-win-close"),
+  // In-app menubar (C-19.15)
+  btnAppMenu: document.getElementById("btn-app-menu"),
+  appMenuPanel: document.getElementById("app-menu-panel"),
+  appMenuQuit: document.getElementById("app-menu-quit"),
   viewPhotos: document.getElementById("view-photos"),
   viewFolders: document.getElementById("view-folders"),
   viewTags: document.getElementById("view-tags"),
@@ -45,8 +53,10 @@ const els = {
   themeOptions: document.getElementById("theme-options"),
   toggleFxAnim: document.getElementById("toggle-fx-anim"),
   toggleFxShadow: document.getElementById("toggle-fx-shadow"),
+  toggleFxGlass: document.getElementById("toggle-fx-glass"),
   fxAnimState: document.getElementById("fx-anim-state"),
   fxShadowState: document.getElementById("fx-shadow-state"),
+  fxGlassState: document.getElementById("fx-glass-state"),
   toggleHwDecode: document.getElementById("toggle-hw-decode"),
   hwDecodeHint: document.getElementById("hw-decode-hint"),
   btnRestart: document.getElementById("btn-restart"),
@@ -91,7 +101,11 @@ const els = {
   rejectGrid: document.getElementById("reject-grid"),
   rejectStatus: document.getElementById("reject-status"),
   rejectSearchInput: document.getElementById("reject-search-input"),
-  ratingFilterRejects: document.getElementById("rating-filter-rejects"),
+  btnRatingFilter: document.getElementById("btn-rating-filter"),
+  btnRatingFilterRejects: document.getElementById("btn-rating-filter-rejects"),
+  ratingPanel: document.getElementById("rating-panel"),
+  ratingPanelItems: document.getElementById("rating-panel-items"),
+  btnRatingClear: document.getElementById("btn-rating-clear"),
   btnSelectModeRejects: document.getElementById("btn-select-mode-rejects"),
   btnColorFilterRejects: document.getElementById("btn-color-filter-rejects"),
   btnRejectCond: document.getElementById("btn-reject-cond"),
@@ -108,6 +122,54 @@ const els = {
 };
 
 // ---------------------------------------------------------------------------
+// --- Custom titlebar (C-19.13): frameless on Windows/Linux — in-app window
+// controls. macOS keeps its native traffic lights; the bar is hidden there
+// via body.platform-mac (set below). ---
+if (navigator.userAgent.includes("Macintosh")) {
+  document.body.classList.add("platform-mac");
+}
+const { getCurrentWindow } = window.__TAURI__.window;
+const appWindow = getCurrentWindow();
+els.btnWinMin.addEventListener("click", () => {
+  appWindow.minimize().catch((e) => reportJs("titlebar", String(e)));
+});
+els.btnWinMax.addEventListener("click", () => {
+  appWindow.toggleMaximize().catch((e) => reportJs("titlebar", String(e)));
+});
+els.btnWinClose.addEventListener("click", () => {
+  appWindow.close().catch((e) => reportJs("titlebar", String(e)));
+});
+const SVG_MAX =
+  '<svg class="titlebar__svg" viewBox="0 0 12 12" aria-hidden="true"><rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+const SVG_RESTORE =
+  '<svg class="titlebar__svg" viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="0.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="0.5" y="2.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+async function updateWinMaxBtn() {
+  try {
+    const max = await appWindow.isMaximized();
+    els.btnWinMax.innerHTML = max ? SVG_RESTORE : SVG_MAX;
+    els.btnWinMax.title = t(max ? "titlebar.restore" : "titlebar.maximize");
+  } catch (e) {
+    /* ignore */
+  }
+}
+appWindow.onResized(updateWinMaxBtn);
+updateWinMaxBtn();
+
+// In-app menubar (C-19.15): a "File" dropdown right of the title — classic
+// menubars don't fit the frameless look, so it's a dropdown instead.
+els.btnAppMenu.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.appMenuPanel.hidden = !els.appMenuPanel.hidden;
+});
+els.appMenuQuit.addEventListener("click", () => {
+  appWindow.close().catch((e) => reportJs("titlebar", String(e)));
+});
+document.addEventListener("click", (e) => {
+  if (!els.appMenuPanel.hidden && !e.target.closest("#btn-app-menu, #app-menu-panel")) {
+    els.appMenuPanel.hidden = true;
+  }
+});
+
 // Photo grid: chunked rendering + lazy thumbnails (LIMITS.md §5.5)
 // ---------------------------------------------------------------------------
 let currentPhotos = [];
@@ -117,6 +179,9 @@ const CHUNK_APPEND = 100; // cards appended per scroll fill
 // C-19) — every grid operation below targets this element.
 let currentGrid = els.photoGrid;
 const rejectGrid = els.rejectGrid;
+// The scroll container (the VIEW, C-19.14): cards live in the grid, but
+// scrolling/height measurements belong to the view wrapper.
+let currentScroll = els.viewPhotos;
 
 // --- collapsible sidebar (C-19.2): labels + width animate; expanded by
 // default, state persisted in localStorage ---
@@ -166,12 +231,15 @@ function switchView(name) {
   els.navTags.classList.toggle("sidebar__btn--active", isTags);
   els.navRejects.classList.toggle("sidebar__btn--active", isRejects);
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
-  // Photo grids: switch the target of all grid operations (C-19).
+  // Photo grids: switch the target of all grid operations (C-19). The VIEW
+  // is the scroll container (C-19.14) — currentScroll tracks it alongside.
   if (isPhotos) {
     currentGrid = els.photoGrid;
+    currentScroll = els.viewPhotos;
     els.photoStatus.classList.remove("view--hidden");
   } else if (isRejects) {
     currentGrid = rejectGrid;
+    currentScroll = els.viewRejects;
   }
   // Shared filters (colors/lens/focal/rating) are page-specific: switching
   // between Photos and Rejects clears them so one page's conditions never
@@ -208,12 +276,12 @@ function clearSharedFilters() {
   activeLensFilters.clear();
   focalMin = null;
   focalMax = null;
-  minRating = 0;
+  activeRatings.clear();
+  els.ratingPanel.hidden = true;
   filterFocalMin.value = "";
   filterFocalMax.value = "";
-  ratingFilterEl.value = "0";
-  els.ratingFilterRejects.value = "0";
   renderFilterDots();
+  renderRatingButtons();
   updateFilterButton();
 }
 // --- Theme (dark / light) — persisted in localStorage, no backend needed ---
@@ -241,23 +309,30 @@ els.themeOptions.addEventListener("click", (ev) => {
   renderThemeButtons();
 });
 
-// --- FX toggles (C-19.11): animations / shadows — localStorage, default ON ---
+// --- FX toggles (C-19.11/C-19.15): animations / shadows / liquid glass —
+// localStorage, default ON ---
 const FX_ANIM_KEY = "tiol-fx-anim";
 const FX_SHADOW_KEY = "tiol-fx-shadow";
+const FX_GLASS_KEY = "tiol-fx-glass";
 
 function applyFx() {
   let anim = "1";
   let shadow = "1";
+  let glass = "1";
   try {
     anim = localStorage.getItem(FX_ANIM_KEY) || "1";
     shadow = localStorage.getItem(FX_SHADOW_KEY) || "1";
+    glass = localStorage.getItem(FX_GLASS_KEY) || "1";
   } catch (e) {}
   document.body.classList.toggle("fx-anim-off", anim !== "1");
   document.body.classList.toggle("fx-shadow-off", shadow !== "1");
+  document.body.classList.toggle("fx-glass", glass === "1");
   if (els.fxAnimState) els.fxAnimState.textContent = t(anim === "1" ? "settings.on" : "settings.off");
   if (els.fxShadowState) els.fxShadowState.textContent = t(shadow === "1" ? "settings.on" : "settings.off");
+  if (els.fxGlassState) els.fxGlassState.textContent = t(glass === "1" ? "settings.on" : "settings.off");
   els.toggleFxAnim.classList.toggle("btn--active", anim === "1");
   els.toggleFxShadow.classList.toggle("btn--active", shadow === "1");
+  els.toggleFxGlass.classList.toggle("btn--active", glass === "1");
 }
 
 els.toggleFxAnim.addEventListener("click", () => {
@@ -268,6 +343,11 @@ els.toggleFxAnim.addEventListener("click", () => {
 els.toggleFxShadow.addEventListener("click", () => {
   const next = ((localStorage.getItem(FX_SHADOW_KEY) || "1") === "1") ? "0" : "1";
   try { localStorage.setItem(FX_SHADOW_KEY, next); } catch (e) {}
+  applyFx();
+});
+els.toggleFxGlass.addEventListener("click", () => {
+  const next = ((localStorage.getItem(FX_GLASS_KEY) || "1") === "1") ? "0" : "1";
+  try { localStorage.setItem(FX_GLASS_KEY, next); } catch (e) {}
   applyFx();
 });
 els.navPhotos.addEventListener("click", () => {
@@ -726,7 +806,7 @@ function cardsPerRow() {
 /// must not yank the user back to the top, C-19.10); pass
 /// `{ scrollTop: 0 }` for fresh result sets (searches, folder switches).
 function renderPhotos(photos, opts = {}) {
-  const scrollTop = opts.scrollTop !== undefined ? opts.scrollTop : currentGrid.scrollTop;
+  const scrollTop = opts.scrollTop !== undefined ? opts.scrollTop : currentScroll.scrollTop;
   currentPhotos = photos;
   renderedCount = 0;
   currentGrid.innerHTML = "";
@@ -739,27 +819,26 @@ function renderPhotos(photos, opts = {}) {
       activeRejectConds.size > 0;
     currentGrid.innerHTML = `<div class="empty">${t(hasActiveFilters() || rejectsActive ? "photos.filterEmpty" : "photos.empty")}</div>`;
     els.photoStatus.textContent = t("photos.status.count", { count: 0 });
-    pagePhotoSub.textContent = t("photos.status.count", { count: 0 });
     return;
   }
   // Initial render: exactly the top 5 rows (in order). Further rows are
   // rendered on scroll / viewport fill.
   renderChunk(cardsPerRow() * 5);
   // Restore the scroll position AFTER content exists — assigning scrollTop to
-  // an empty grid is clamped to 0, which silently dropped the position and
-  // made every forced re-render jump back to the top (C-19.10).
-  currentGrid.scrollTop = scrollTop;
+  // an empty container is clamped to 0, which silently dropped the position
+  // and made every forced re-render jump back to the top (C-19.10).
+  currentScroll.scrollTop = scrollTop;
   if (scrollTop > 0) {
     // The initial chunk may be shorter than the target — keep filling
     // (bounded) and re-applying until the position actually sticks.
     let guard = 0;
     while (
-      currentGrid.scrollTop < scrollTop &&
+      currentScroll.scrollTop < scrollTop &&
       renderedCount < currentPhotos.length &&
       guard++ < 20
     ) {
       scrollToViewport();
-      currentGrid.scrollTop = scrollTop;
+      currentScroll.scrollTop = scrollTop;
     }
   }
   // Deterministic initial thumbnail load: explicitly enqueue the first
@@ -772,9 +851,9 @@ function renderPhotos(photos, opts = {}) {
   // One bad card must never kill the whole screenful — per-card try/catch,
   // and a card that failed to enqueue stays unmarked so click/observer can
   // retry it.
-  const g = currentGrid;
+  const sc = currentScroll;
   const restoreWindow =
-    scrollTop > 0 ? scrollTop - g.clientHeight : 0; // enqueue near the restored viewport
+    scrollTop > 0 ? scrollTop - sc.clientHeight : 0; // enqueue near the restored viewport
   for (let i = renderedCount - 1; i >= 0; i--) {
     const card = currentGrid.children[i];
     const img = card && card._img;
@@ -783,7 +862,7 @@ function renderPhotos(photos, opts = {}) {
     // enqueueing every rendered card would starve the visible ones (C-19.10).
     if (restoreWindow > 0) {
       const ct = card.offsetTop;
-      if (ct + card.offsetHeight < restoreWindow || ct > scrollTop + g.clientHeight * 2) continue;
+      if (ct + card.offsetHeight < restoreWindow || ct > scrollTop + sc.clientHeight * 2) continue;
     }
     try {
       enqueueThumb(img, card._photo);
@@ -1176,13 +1255,79 @@ const COLOR_HEX = {
 // The unfiltered result of the current query — filters re-apply to it.
 let allPhotos = [];
 
-// Star rating filter (C-17): only show photos with rating >= minRating.
-// 0 = no filter. Driven by the #rating-filter dropdown in the search bar.
-let minRating = 0;
-const ratingFilterEl = document.getElementById("rating-filter");
-ratingFilterEl.addEventListener("change", () => {
-  minRating = parseInt(ratingFilterEl.value, 10) || 0;
-  renderPhotos(applyFilters(allPhotos));
+// Star rating filter (C-19.14): each star level 0-5 is an independent
+// checkbox — empty set = no filter; e.g. {1,3} keeps 1-star AND 3-star
+// photos. Driven by the rating panel in the search bar (photos + rejects).
+const activeRatings = new Set();
+
+function refreshCurrentView() {
+  if (els.viewRejects.classList.contains("view--hidden")) {
+    renderPhotos(applyFilters(allPhotos));
+  } else {
+    renderPhotos(applyRejectConds(applyFilters(allRejects)));
+  }
+}
+
+function renderRatingButtons() {
+  const on = activeRatings.size > 0;
+  els.btnRatingFilter.classList.toggle("searchbar__filter--active", on);
+  els.btnRatingFilterRejects.classList.toggle("searchbar__filter--active", on);
+}
+
+function renderRatingPanel() {
+  els.ratingPanelItems.innerHTML = "";
+  for (let n = 0; n <= 5; n++) {
+    const label = document.createElement("label");
+    label.className = "rating-panel__item";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = activeRatings.has(n);
+    // Never let a panel-internal click bubble to the document close-handler
+    // (C-19.14): checking one item must not close the panel.
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      if (cb.checked) activeRatings.add(n);
+      else activeRatings.delete(n);
+      renderRatingButtons();
+      refreshCurrentView();
+    });
+    const stars = document.createElement("span");
+    stars.className = "rating-panel__stars";
+    stars.textContent = n === 0 ? t("photos.ratingNone") : "★".repeat(n);
+    label.appendChild(cb);
+    label.appendChild(stars);
+    els.ratingPanelItems.appendChild(label);
+  }
+}
+
+function toggleRatingPanel(anchor) {
+  els.ratingPanel.hidden = !els.ratingPanel.hidden;
+  if (!els.ratingPanel.hidden) {
+    positionPanel(els.ratingPanel, anchor);
+    renderRatingPanel();
+  }
+}
+els.btnRatingFilter.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleRatingPanel(els.btnRatingFilter);
+});
+els.btnRatingFilterRejects.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleRatingPanel(els.btnRatingFilterRejects);
+});
+els.btnRatingClear.addEventListener("click", () => {
+  activeRatings.clear();
+  renderRatingPanel();
+  renderRatingButtons();
+  refreshCurrentView();
+});
+document.addEventListener("click", (e) => {
+  if (
+    !els.ratingPanel.hidden &&
+    !e.target.closest("#rating-panel, #btn-rating-filter, #btn-rating-filter-rejects")
+  ) {
+    els.ratingPanel.hidden = true;
+  }
 });
 
 function hasActiveFilters() {
@@ -1191,7 +1336,7 @@ function hasActiveFilters() {
     activeLensFilters.size > 0 ||
     focalMin != null ||
     focalMax != null ||
-    minRating > 0
+    activeRatings.size > 0
   );
 }
 
@@ -1217,8 +1362,9 @@ function applyFilters(photos) {
       if (focalMin != null && p.focal_length < focalMin) return false;
       if (focalMax != null && p.focal_length > focalMax) return false;
     }
-    // Star rating (C-17): photos without a rating (0) fail a >= filter.
-    if (minRating > 0 && (p.rating || 0) < minRating) return false;
+    // Star rating (C-19.14): the photo's rating must be in the checked set
+    // (0 = unrated); unrated photos fail a filter that excludes 0.
+    if (activeRatings.size && !activeRatings.has(p.rating || 0)) return false;
     return true;
   });
 }
@@ -1307,7 +1453,8 @@ function renderFilterDots() {
       (activeColorFilters.has(c) ? " color-dot--on" : "");
     styleColorDot(dot, c);
     dot.title = t(`colors.${c}`);
-    dot.addEventListener("click", () => {
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation(); // never close the panel from an internal click (C-19.14)
       if (activeColorFilters.has(c)) activeColorFilters.delete(c);
       else activeColorFilters.add(c);
       renderFilterDots();
@@ -1348,7 +1495,8 @@ async function renderFilterLens() {
       "filter-lens__item" + (activeLensFilters.has(l) ? " filter-lens__item--on" : "");
     btn.textContent = l;
     btn.title = l;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation(); // never close the panel from an internal click (C-19.14)
       if (activeLensFilters.has(l)) activeLensFilters.delete(l);
       else activeLensFilters.add(l);
       renderFilterLens();
@@ -1408,12 +1556,12 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   activeLensFilters.clear();
   focalMin = null;
   focalMax = null;
+  activeRatings.clear();
   filterFocalMin.value = "";
   filterFocalMax.value = "";
-  minRating = 0;
-  ratingFilterEl.value = "0";
   renderFilterDots();
   renderFilterLens();
+  renderRatingButtons();
   updateFilterButton();
   renderPhotos(applyFilters(allPhotos));
 });
@@ -1431,7 +1579,7 @@ document.addEventListener("click", (e) => {
 // continue on the next frame, so a large library can never block the UI.
 function fillGridIfNeeded() {
   if (els.viewPhotos.classList.contains("view--hidden") && els.viewRejects.classList.contains("view--hidden")) return;
-  const g = currentGrid;
+  const g = currentScroll;
   let passes = 0;
   while (renderedCount < currentPhotos.length && g.scrollHeight <= g.clientHeight + 300) {
     renderChunk();
@@ -1469,7 +1617,7 @@ function scheduleScrollFill() {
 
 function scrollToViewport() {
   if (renderedCount >= currentPhotos.length) return;
-  const g = currentGrid;
+  const g = currentScroll;
   let passes = 0;
   while (
     renderedCount < currentPhotos.length &&
@@ -1484,15 +1632,16 @@ function scrollToViewport() {
 }
 
 function onGridScroll() {
-  const g = currentGrid;
+  const g = currentScroll;
   if (renderedCount >= currentPhotos.length) return;
   // Viewport bottom is beyond the rendered region -> render the viewed area.
   if (g.scrollTop + g.clientHeight * 2 + 600 > g.scrollHeight) {
     scheduleScrollFill();
   }
 }
-els.photoGrid.addEventListener("scroll", onGridScroll);
-rejectGrid.addEventListener("scroll", onGridScroll);
+// The VIEW is the scroll container (C-19.14).
+els.viewPhotos.addEventListener("scroll", onGridScroll);
+els.viewRejects.addEventListener("scroll", onGridScroll);
 
 // --- lazy thumbnails via IntersectionObserver (only near-viewport cards) ---
 const THUMB_MAX_INFLIGHT = 4;
@@ -1735,7 +1884,7 @@ async function setPhotoRating(p, n) {
       const stars = p._card.querySelector(".card__stars");
       if (stars) renderCardStars(stars, p.rating);
     }
-    if (minRating > 0) renderPhotos(applyFilters(allPhotos));
+    if (activeRatings.size) refreshCurrentView();
   } catch (e) {
     alert(String(e));
   }
@@ -1926,11 +2075,23 @@ async function loadPhotos(folderId = null, opts = {}) {
     // ALWAYS render into the photos grid: currentGrid may be the rejects
     // grid when a refresh is triggered from there (delete / scan), and
     // painting the full unfiltered list into it caused a visible flash of
-    // every photo on the rejects page (C-19.11).
+    // every photo on the rejects page (C-19.11). Background refreshes (from
+    // the rejects page / scan) restore the rejects render state afterwards
+    // so the visible grid keeps working (C-19.14).
     const wasGrid = currentGrid;
+    const wasScroll = currentScroll;
+    const wasPhotos = currentPhotos;
+    const wasRendered = renderedCount;
+    const foreground = wasGrid === els.photoGrid;
     currentGrid = els.photoGrid;
+    currentScroll = els.viewPhotos;
     renderPhotos(applyFilters(photos), opts);
-    currentGrid = wasGrid;
+    if (!foreground) {
+      currentGrid = wasGrid;
+      currentScroll = wasScroll;
+      currentPhotos = wasPhotos;
+      renderedCount = wasRendered;
+    }
     // Fill the viewport beyond the initial chunk — startup renders only the
     // first screenful and nothing triggers the fill loop otherwise (C-19.7).
     requestAnimationFrame(fillGridIfNeeded);
@@ -2236,17 +2397,37 @@ function renderRejectStatus(n) {
   els.rejectStatus.textContent = t("photos.status.count", { count: n });
 }
 
+/// Render the rejects grid, then restore the global render state if this was
+/// a BACKGROUND refresh (user on the photos page — e.g. the
+/// reject-analysis-complete event fired). Background refreshes must NOT leak
+/// the rejects data into currentPhotos/renderedCount or the photos grid stops
+/// filling (C-19.14). Foreground calls (user on the rejects page) keep the
+/// rejects data as the current render state.
+function renderRejectsList(shown) {
+  const wasGrid = currentGrid;
+  const wasScroll = currentScroll;
+  const wasPhotos = currentPhotos;
+  const wasRendered = renderedCount;
+  const foreground = wasGrid === rejectGrid;
+  currentGrid = rejectGrid;
+  currentScroll = els.viewRejects;
+  renderPhotos(shown);
+  if (!foreground) {
+    currentGrid = wasGrid;
+    currentScroll = wasScroll;
+    currentPhotos = wasPhotos;
+    renderedCount = wasRendered;
+  }
+  renderRejectStatus(shown.length);
+}
+
 async function loadRejects() {
   try {
     const photos = await invoke("get_photos", { folderId: null });
     allRejects = photos;
     // Shared filters (colors/lens/focal/rating) ∩ reject conditions.
     const shown = applyRejectConds(applyFilters(photos));
-    const wasGrid = currentGrid;
-    currentGrid = rejectGrid;
-    renderPhotos(shown);
-    currentGrid = wasGrid;
-    renderRejectStatus(shown.length);
+    renderRejectsList(shown);
     requestAnimationFrame(fillGridIfNeeded);
   } catch (e) {
     console.error(e);
@@ -2269,34 +2450,16 @@ async function runRejectSearch() {
     const res = await invoke("search", { query: q, mode: "semantic" });
     allRejects = res;
     const shown = applyRejectConds(applyFilters(res));
-    const wasGrid = currentGrid;
-    currentGrid = rejectGrid;
-    renderPhotos(shown);
-    currentGrid = wasGrid;
-    renderRejectStatus(shown.length);
+    renderRejectsList(shown);
   } catch (e) {
     console.error(e);
-    const wasGrid = currentGrid;
-    currentGrid = rejectGrid;
-    renderPhotos([]);
-    currentGrid = wasGrid;
+    renderRejectsList([]);
     els.rejectStatus.textContent = t("search.semantic.error");
   }
 }
 
-// Rating dropdown of the rejects view shares `minRating` with the photos
-// view — keep both selects in sync (C-19).
-els.ratingFilterRejects.addEventListener("change", () => {
-  minRating = parseInt(els.ratingFilterRejects.value, 10) || 0;
-  ratingFilterEl.value = String(minRating);
-  if (els.viewRejects.classList.contains("view--hidden")) {
-    renderPhotos(applyFilters(allPhotos));
-  } else {
-    // Reject conditions must still apply — a bare applyFilters would show
-    // every photo on the rejects page (C-19.11).
-    renderPhotos(applyRejectConds(applyFilters(allRejects)));
-  }
-});
+// Rating filtering now lives in the shared star-rating panel (C-19.14) —
+// opened from either the photos or the rejects "星数" button.
 
 // Both "Filter" buttons (photos + rejects) open the same global panel,
 // anchored under whichever button was clicked.
@@ -2377,6 +2540,9 @@ function renderRejectConds() {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = activeRejectConds.has(c);
+    // Never let a panel-internal click bubble to the document close-handler
+    // (C-19.14): checking one condition must not close the panel.
+    cb.addEventListener("click", (e) => e.stopPropagation());
     cb.addEventListener("change", () => {
       if (cb.checked) activeRejectConds.add(c);
       else activeRejectConds.delete(c);
@@ -2727,12 +2893,25 @@ function onboardingOnPhotosClicked() {
   }
   loadPhotos();
   loadFolders();
-  // Startup-fill fallback (C-19.11): the rAF inside loadPhotos may fire
-  // before the webview's first layout and never get re-triggered, leaving
-  // only a couple of rows rendered until the user switches pages. The fill
-  // is idempotent and stops once the viewport is covered — retry on timers.
+  // Startup-fill fallback (C-19.11/C-19.13): the rAF inside loadPhotos may
+  // fire before the webview's first layout — or before the get_photos invoke
+  // even resolves — and never get re-triggered, leaving only a couple of
+  // rows rendered until the user switches pages. The fill is idempotent and
+  // stops once the viewport is covered, so poll periodically until then.
   setTimeout(fillGridIfNeeded, 300);
   setTimeout(fillGridIfNeeded, 1500);
+  let fillChecks = 0;
+  const fillWatchdog = setInterval(() => {
+    // Stop once everything is rendered OR the grid overflows (scroll
+    // handling takes over from there).
+    const g = els.viewPhotos;
+    if ((renderedCount >= currentPhotos.length && currentPhotos.length > 0) || g.scrollHeight > g.clientHeight) {
+      clearInterval(fillWatchdog);
+      return;
+    }
+    fillGridIfNeeded();
+    if (++fillChecks >= 12) clearInterval(fillWatchdog); // ~6s cap
+  }, 500);
   // Position the active-indicator WITHOUT the glide transition at startup —
   // boot never calls switchView, so the bar would otherwise sit at the top
   // of the sidebar (above the camera icon) until the first view switch.
