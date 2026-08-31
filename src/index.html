@@ -19,6 +19,10 @@
         <div class="titlebar__menu-panel" id="app-menu-panel" hidden>
           <button class="titlebar__menu-item" id="app-menu-quit" data-i18n="menu.quit">退出</button>
         </div>
+        <button class="titlebar__menu-btn" id="btn-app-menu-help" data-i18n="menu.help">帮助</button>
+        <div class="titlebar__menu-panel" id="app-menu-help-panel" hidden>
+          <button class="titlebar__menu-item" id="app-menu-github" data-i18n="menu.viewGithub">查看 GitHub 页面</button>
+        </div>
       </div>
     </div>
     <div class="titlebar__controls">
@@ -41,6 +45,27 @@
       <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M487.4 315.7l-42.6-24.6c4.3-23.2 4.3-47 0-70.2l42.6-24.6c4.9-2.8 7.1-8.6 5.5-14-11.1-35.6-30-67.8-54.7-94.6-3.8-4.1-10-5.1-14.8-2.3L380.8 110c-17.9-15.4-38.5-27.3-60.8-35.1V25.8c0-5.6-3.9-10.5-9.4-11.7-36.7-8.2-74.3-7.8-109.2 0-5.5 1.2-9.4 6.1-9.4 11.7V75c-22.2 7.9-42.8 19.8-60.8 35.1L88.7 85.5c-4.9-2.8-11-1.9-14.8 2.3-24.7 26.7-43.6 58.9-54.7 94.6-1.7 5.4.6 11.2 5.5 14L67.3 221c-4.3 23.2-4.3 47 0 70.2l-42.6 24.6c-4.9 2.8-7.1 8.6-5.5 14 11.1 35.6 30 67.8 54.7 94.6 3.8 4.1 10 5.1 14.8 2.3l42.6-24.6c17.9 15.4 38.5 27.3 60.8 35.1v49.2c0 5.6 3.9 10.5 9.4 11.7 36.7 8.2 74.3 7.8 109.2 0 5.5-1.2 9.4-6.1 9.4-11.7v-49.2c22.2-7.9 42.8-19.8 60.8-35.1l42.6 24.6c4.9 2.8 11 1.9 14.8-2.3 24.7-26.7 43.6-58.9 54.7-94.6 1.5-5.5-.7-11.3-5.6-14.1zM256 336c-44.1 0-80-35.9-80-80s35.9-80 80-80 80 35.9 80 80-35.9 80-80 80z"/></svg></span><span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
       <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单"><span class="sidebar__icon">◀</span><span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
     </nav>
+
+    <!-- Secondary icon bar (C-19.15): narrow tool rail right of the sidebar.
+         Clicking a button slides out an empty side panel (squeezing main). -->
+    <nav class="iconbar" id="iconbar" aria-label="Tools">
+      <button class="iconbar__btn" id="btn-panel-tree" data-i18n-title="iconbar.tree">
+        <svg class="iconbar__svg" viewBox="0 0 1152 1024" aria-hidden="true"><path fill="currentColor" d="M576 448h448a64 64 0 0 0 64-64V128a64 64 0 0 0-64-64H800L736 0h-160a64 64 0 0 0-64 64v144H160V32A32 32 0 0 0 128 0H96a32 32 0 0 0-32 32v784a64 64 0 0 0 64 64h384v80a64 64 0 0 0 64 64h448a64 64 0 0 0 64-64V704a64 64 0 0 0-64-64H800l-64-64h-160a64 64 0 0 0-64 64v144H160V304h352v80a64 64 0 0 0 64 64z m32-352h88.24l64 64H992v192H608z m0 576h88.24l64 64H992v192H608z"/></svg>
+      </button>
+      <button class="iconbar__btn" id="btn-panel-tag" data-i18n-title="iconbar.tag">
+        <svg class="iconbar__svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M0 252.118V48C0 21.49 21.49 0 48 0h204.118a48 48 0 0 1 33.941 14.059l211.882 211.882c18.745 18.745 18.745 49.137 0 67.882L293.823 497.941c-18.745 18.745-49.137 18.745-67.882 0L14.059 286.059A48 48 0 0 1 0 252.118zM112 64c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48z"/></svg>
+      </button>
+      <button class="iconbar__btn" id="btn-panel-colors" data-i18n-title="iconbar.colors">
+        <span class="iconbar__colors"></span>
+      </button>
+      <button class="iconbar__btn" id="btn-panel-eraser" data-i18n-title="iconbar.eraser">
+        <svg class="iconbar__svg" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="currentColor" d="M995.8835 547.882c37.49-37.49 37.49-98.274 0-135.764l-320-320c-37.49-37.49-98.272-37.492-135.766 0l-512 512c-37.49 37.49-37.49 98.274 0 135.764l192 192A96.008 96.008 0 0 0 288.0015 960h712c13.254 0 24-10.746 24-24v-80c0-13.254-10.746-24-24-24H711.7675l284.116-284.118z m-605.254-125.254l274.746 274.746L530.7475 832H301.2575l-160-160 249.372-249.372z"/></svg>
+      </button>
+    </nav>
+
+    <!-- Slide-out side panel (C-19.15): slides in from the LEFT (squeezing
+         main rightward); empty for now. -->
+    <aside class="sidepanel" id="side-panel"></aside>
 
     <main class="main">
       <!-- Photos view -->

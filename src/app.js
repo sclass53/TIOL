@@ -44,6 +44,16 @@ const els = {
   btnAppMenu: document.getElementById("btn-app-menu"),
   appMenuPanel: document.getElementById("app-menu-panel"),
   appMenuQuit: document.getElementById("app-menu-quit"),
+  btnAppMenuHelp: document.getElementById("btn-app-menu-help"),
+  appMenuHelpPanel: document.getElementById("app-menu-help-panel"),
+  appMenuGithub: document.getElementById("app-menu-github"),
+  // Secondary icon bar + slide-out panel (C-19.15)
+  iconBar: document.getElementById("iconbar"),
+  btnPanelTree: document.getElementById("btn-panel-tree"),
+  btnPanelTag: document.getElementById("btn-panel-tag"),
+  btnPanelColors: document.getElementById("btn-panel-colors"),
+  btnPanelEraser: document.getElementById("btn-panel-eraser"),
+  sidePanel: document.getElementById("side-panel"),
   viewPhotos: document.getElementById("view-photos"),
   viewFolders: document.getElementById("view-folders"),
   viewTags: document.getElementById("view-tags"),
@@ -160,15 +170,219 @@ updateWinMaxBtn();
 els.btnAppMenu.addEventListener("click", (e) => {
   e.stopPropagation();
   els.appMenuPanel.hidden = !els.appMenuPanel.hidden;
+  els.appMenuHelpPanel.hidden = true;
+});
+els.btnAppMenuHelp.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.appMenuHelpPanel.hidden = !els.appMenuHelpPanel.hidden;
+  els.appMenuPanel.hidden = true;
 });
 els.appMenuQuit.addEventListener("click", () => {
   appWindow.close().catch((e) => reportJs("titlebar", String(e)));
+});
+// Kill the WebView2 native context menu everywhere — the app's own card
+// context menu (ctx-menu) handles right-clicks on cards; everywhere else a
+// right-click does nothing, so the app never looks like a web page (C-19.15).
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
+
+// The app's GitHub repository (Help menu, C-19.15).
+const GITHUB_URL = "https://github.com/sclass53/TIOL-Image-Manager";
+els.appMenuGithub.addEventListener("click", () => {
+  window.__TAURI__.shell
+    .open(GITHUB_URL)
+    .catch((e) => reportJs("menu", String(e)));
 });
 document.addEventListener("click", (e) => {
   if (!els.appMenuPanel.hidden && !e.target.closest("#btn-app-menu, #app-menu-panel")) {
     els.appMenuPanel.hidden = true;
   }
+  if (!els.appMenuHelpPanel.hidden && !e.target.closest("#btn-app-menu-help, #app-menu-help-panel")) {
+    els.appMenuHelpPanel.hidden = true;
+  }
 });
+
+// Slide-out side panel (C-19.15): clicking an icon opens its panel; clicking
+// ANOTHER icon switches the panel (stays open); clicking the SAME icon closes.
+// Each mode keeps its own selection state.
+let sidePanelBtn = null;
+let sideMode = null; // "tags" | "colors" | "tree" | "eraser"
+let sideTag = null; // selected tag name (tags mode)
+let sideColor = null; // selected color (colors mode)
+// Folder scope (tree mode): null = all photos; else { rootId, path } —
+// photos are fetched for the ROOT folder and narrowed by path prefix so
+// subfolders of an imported folder work too (C-19.15).
+let folderScope = null;
+// Expanded subfolder paths in the tree panel — ALL nodes start collapsed
+// (roots too, C-19.15). The tree itself is cached per session so toggling
+// a triangle never re-scans the disk.
+const treeExpanded = new Set();
+let treeCache = null;
+
+function toggleSidePanel(btn, mode) {
+  if (sideMode === "eraser") {
+    els.btnPanelEraser.classList.remove("iconbar__btn--active");
+  }
+  if (sidePanelBtn === btn) {
+    // Same button again: close.
+    els.sidePanel.classList.remove("sidepanel--open");
+    btn.classList.remove("iconbar__btn--active");
+    sidePanelBtn = null;
+    sideMode = null;
+    return;
+  }
+  // Open (or switch to) this button's panel.
+  els.sidePanel.classList.add("sidepanel--open");
+  if (sidePanelBtn) sidePanelBtn.classList.remove("iconbar__btn--active");
+  sidePanelBtn = btn;
+  sidePanelBtn.classList.add("iconbar__btn--active");
+  sideMode = mode;
+  renderSidePanel(mode);
+}
+
+// Eraser mode (C-19.15): NO side panel — clicking photos strips all tags
+// and colors. Clicking the eraser again (or any other icon) exits it.
+els.btnPanelEraser.addEventListener("click", () => {
+  if (sideMode === "eraser") {
+    els.btnPanelEraser.classList.remove("iconbar__btn--active");
+    sideMode = null;
+    return;
+  }
+  if (sidePanelBtn) {
+    sidePanelBtn.classList.remove("iconbar__btn--active");
+    sidePanelBtn = null;
+  }
+  els.sidePanel.classList.remove("sidepanel--open");
+  sideMode = "eraser";
+  els.btnPanelEraser.classList.add("iconbar__btn--active");
+});
+
+async function renderSidePanel(mode) {
+  const p = els.sidePanel;
+  p.textContent = "";
+  if (mode === "tags") {
+    let tags = [];
+    try {
+      tags = await invoke("get_all_tags");
+    } catch (e) {
+      reportJs("side-tags", String(e));
+    }
+    if (!tags.length) {
+      const d = document.createElement("div");
+      d.className = "sidepanel__empty";
+      d.textContent = t("sidepanel.noTags");
+      p.appendChild(d);
+      return;
+    }
+    for (const name of tags) {
+      const btn = document.createElement("button");
+      btn.className =
+        "sidepanel__item" + (sideTag === name ? " sidepanel__item--active" : "");
+      btn.textContent = name;
+      btn.title = name;
+      btn.addEventListener("click", () => {
+        sideTag = sideTag === name ? null : name;
+        renderSidePanel("tags");
+      });
+      p.appendChild(btn);
+    }
+  } else if (mode === "colors") {
+    for (const c of COLOR_ORDER) {
+      const btn = document.createElement("button");
+      btn.className =
+        "sidepanel__item" + (sideColor === c ? " sidepanel__item--active" : "");
+      const dot = document.createElement("span");
+      dot.className = "color-dot color-dot--filter"; // --filter gives it a size
+      styleColorDot(dot, c);
+      const label = document.createElement("span");
+      label.textContent = t(`colors.${c}`);
+      btn.appendChild(dot);
+      btn.appendChild(label);
+      btn.addEventListener("click", () => {
+        sideColor = sideColor === c ? null : c;
+        renderSidePanel("colors");
+      });
+      p.appendChild(btn);
+    }
+  } else if (mode === "tree") {
+    const allBtn = document.createElement("button");
+    allBtn.className =
+      "sidepanel__item" + (folderScope == null ? " sidepanel__item--active" : "");
+    allBtn.textContent = t("sidepanel.all");
+    allBtn.addEventListener("click", () => {
+      folderScope = null;
+      loadPhotos();
+      renderSidePanel("tree");
+    });
+    p.appendChild(allBtn);
+    let trees = [];
+    try {
+      trees = treeCache || (treeCache = await invoke("get_folder_tree"));
+    } catch (e) {
+      reportJs("side-tree", String(e));
+    }
+    // ALL nodes start collapsed (roots too); the triangle toggles each.
+    // Toggling mutates the DOM IN PLACE — rebuilding the panel would destroy
+    // the transition start point and the rotation animation (C-19.15).
+    const renderNode = (node, depth) => {
+      const row = document.createElement("div");
+      row.className = "sidepanel__row";
+      const hasKids = node.children.length > 0;
+      const expanded = treeExpanded.has(node.path);
+      let tri = null;
+      if (hasKids) {
+        tri = document.createElement("button");
+        tri.className = "sidepanel__tri" + (expanded ? " sidepanel__tri--open" : "");
+        tri.textContent = "▶"; // rotate(90deg) points it down when expanded
+        tri.title = expanded ? t("sidepanel.collapse") : t("sidepanel.expand");
+        row.appendChild(tri);
+      } else {
+        const spacer = document.createElement("span");
+        spacer.className = "sidepanel__tri-spacer";
+        row.appendChild(spacer);
+      }
+      const btn = document.createElement("button");
+      btn.className =
+        "sidepanel__item sidepanel__item--tree" +
+        (folderScope && folderScope.path === node.path ? " sidepanel__item--active" : "");
+      btn.style.paddingLeft = `${6 + depth * 14}px`;
+      btn.textContent = node.name;
+      btn.title = node.path;
+      btn.addEventListener("click", () => {
+        folderScope = { rootId: node.root_id, path: node.path };
+        loadPhotos();
+        renderSidePanel("tree");
+      });
+      row.appendChild(btn);
+      p.appendChild(row);
+      if (hasKids) {
+        const kids = document.createElement("div");
+        kids.className = "sidepanel__kids";
+        kids.hidden = !expanded;
+        for (const child of node.children) {
+          kids.appendChild(renderNode(child, depth + 1));
+        }
+        tri.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const open = kids.hidden;
+          kids.hidden = !open;
+          tri.classList.toggle("sidepanel__tri--open", open);
+          tri.title = open ? t("sidepanel.collapse") : t("sidepanel.expand");
+          if (open) treeExpanded.add(node.path);
+          else treeExpanded.delete(node.path);
+        });
+        p.appendChild(kids);
+      }
+      return row; // parents append children into their own kids container
+    };
+    for (const root of trees) renderNode(root, 0);
+  }
+}
+
+els.btnPanelTree.addEventListener("click", () => toggleSidePanel(els.btnPanelTree, "tree"));
+els.btnPanelTag.addEventListener("click", () => toggleSidePanel(els.btnPanelTag, "tags"));
+els.btnPanelColors.addEventListener("click", () => toggleSidePanel(els.btnPanelColors, "colors"));
 
 // Photo grid: chunked rendering + lazy thumbnails (LIMITS.md §5.5)
 // ---------------------------------------------------------------------------
@@ -233,6 +447,18 @@ function switchView(name) {
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
   // Photo grids: switch the target of all grid operations (C-19). The VIEW
   // is the scroll container (C-19.14) — currentScroll tracks it alongside.
+  // The icon bar only exists on the grid pages (animated hide elsewhere).
+  if (els.iconBar) {
+    els.iconBar.classList.toggle("iconbar--hidden", !isPhotos && !isRejects);
+  }
+  // Leaving the grid pages closes the slide-out panel (C-19.15).
+  if (!isPhotos && !isRejects) {
+    els.sidePanel.classList.remove("sidepanel--open");
+    if (sidePanelBtn) sidePanelBtn.classList.remove("iconbar__btn--active");
+    sidePanelBtn = null;
+    if (sideMode === "eraser") els.btnPanelEraser.classList.remove("iconbar__btn--active");
+    sideMode = null;
+  }
   if (isPhotos) {
     currentGrid = els.photoGrid;
     currentScroll = els.viewPhotos;
@@ -672,6 +898,8 @@ const tagEls = {
   add: document.getElementById("btn-add-tag"),
   list: document.getElementById("tag-list"),
 };
+// Tags checked on the Tags page — "AI Tagging" only processes these (C-19.15).
+const selectedTagIds = new Set();
 
 async function renderTags() {
   let tags = [];
@@ -691,6 +919,15 @@ async function renderTags() {
   for (const tg of tags) {
     const li = document.createElement("li");
     li.className = "tags__item";
+    // Checkable tag (C-19.15): "AI Tagging" only processes checked tags.
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "tags__check";
+    cb.checked = selectedTagIds.has(tg.id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedTagIds.add(tg.id);
+      else selectedTagIds.delete(tg.id);
+    });
     const name = document.createElement("span");
     name.className = "tags__name";
     name.textContent = tg.name;
@@ -703,11 +940,13 @@ async function renderTags() {
     del.addEventListener("click", async () => {
       try {
         await invoke("delete_custom_tag", { id: tg.id });
+        selectedTagIds.delete(tg.id);
         renderTags();
       } catch (e) {
         alert(String(e));
       }
     });
+    li.appendChild(cb);
     li.appendChild(name);
     li.appendChild(meta);
     li.appendChild(del);
@@ -734,12 +973,20 @@ tagEls.input.addEventListener("keydown", (e) => {
   if (e.key === "Enter") tagEls.add.click();
 });
 
-// "AI Tagging" (C-12): the ONLY way tagging starts. Queues a full pass over
-// every photo missing any current tag (new tags & new files included).
+// "AI Tagging" (C-12/C-19.15): processes ONLY the checked tags.
 let taggingStatusTimer = null;
 els.btnRunTagging.addEventListener("click", async () => {
+  if (!selectedTagIds.size) {
+    els.taggingStatus.textContent = t("tags.selectFirst");
+    els.taggingStatus.hidden = false;
+    clearTimeout(taggingStatusTimer);
+    taggingStatusTimer = setTimeout(() => {
+      els.taggingStatus.hidden = true;
+    }, 6000);
+    return;
+  }
   try {
-    const n = await invoke("run_ai_tagging");
+    const n = await invoke("run_ai_tagging", { tagIds: [...selectedTagIds] });
     els.taggingStatus.textContent = t("tags.runStarted", { count: n });
     els.taggingStatus.hidden = false;
     clearTimeout(taggingStatusTimer);
@@ -2058,6 +2305,20 @@ function buildCard(p) {
       toggleSelect(p);
       return;
     }
+    // Side-panel quick actions (C-19.15): a selected tag/color applies on
+    // click — the mode stays active until the panel selection is cleared.
+    if (sideMode === "eraser") {
+      applyEraser(p);
+      return;
+    }
+    if (sideMode === "tags" && sideTag) {
+      applySideTag(p);
+      return;
+    }
+    if (sideMode === "colors" && sideColor) {
+      applySideColor(p);
+      return;
+    }
     try {
       setThumb(img, p);
     } catch (e) {
@@ -2068,10 +2329,104 @@ function buildCard(p) {
   return card;
 }
 
+/// Eraser mode (C-19.15): strip ALL tags + colors from one photo — lazy,
+/// the card updates in place.
+async function applyEraser(p) {
+  try {
+    await invoke("clear_tags_from_files", { fileIds: [p.id] });
+    p.tags = [];
+    p.colors = [];
+    updateCardInPlace(p);
+    if (!els.viewRejects.classList.contains("view--hidden")) {
+      if (!applyRejectConds([p]).length) {
+        if (p._card) p._card.remove();
+        renderRejectStatus(applyRejectConds(applyFilters(allRejects)).length);
+      }
+    }
+  } catch (e) {
+    alert(String(e));
+  }
+}
+
+/// Apply the side panel's selected tag to one photo (C-19.15) — lazy:
+/// updates the card in place, no grid re-render.
+async function applySideTag(p) {
+  try {
+    await invoke("add_tags_to_files", { fileIds: [p.id], tags: [sideTag] });
+    if (!(p.tags || []).includes(sideTag)) p.tags = [...(p.tags || []), sideTag];
+    updateCardInPlace(p);
+  } catch (e) {
+    alert(String(e));
+  }
+}
+
+/// Apply the side panel's selected color to one photo (C-19.15) — lazy:
+/// updates the card in place, no grid re-render. `all` = whether the photo
+/// carries the color AFTER the toggle (true → add, false → remove).
+async function applySideColor(p) {
+  try {
+    const all = await invoke("toggle_color_tag", { fileIds: [p.id], color: sideColor });
+    const cs = p.colors || [];
+    if (all) {
+      if (!cs.includes(sideColor)) p.colors = [...cs, sideColor];
+    } else {
+      p.colors = cs.filter((x) => x !== sideColor);
+    }
+    updateCardInPlace(p);
+    // If the new state drops the photo out of the CURRENT view (reject
+    // conditions / active filters), remove its card in place.
+    if (!els.viewRejects.classList.contains("view--hidden")) {
+      if (!applyRejectConds([p]).length) {
+        if (p._card) p._card.remove();
+        renderRejectStatus(applyRejectConds(applyFilters(allRejects)).length);
+      }
+    } else if (hasActiveFilters() && !applyFilters([p]).length) {
+      if (p._card) p._card.remove();
+    }
+  } catch (e) {
+    alert(String(e));
+  }
+}
+
+/// Update one card's tag line / color dots / reject badge without
+/// re-rendering the grid (lazy apply, C-19.15).
+function updateCardInPlace(p) {
+  const card = p._card;
+  if (!card) return;
+  const text = (p.tags || []).join(", ");
+  let desc = card.querySelector(".card__desc");
+  if (text) {
+    if (!desc) {
+      desc = document.createElement("div");
+      desc.className = "card__desc";
+      // Must live INSIDE .card__meta — the card has a fixed height and
+      // clips anything appended past it (C-19.15).
+      const meta = card.querySelector(".card__meta");
+      if (meta) meta.appendChild(desc);
+      else card.appendChild(desc);
+    }
+    desc.textContent = text;
+    desc.title = text;
+  } else if (desc) {
+    desc.remove();
+  }
+  const colorsEl = card.querySelector(".card__colors");
+  if (colorsEl) renderCardColors(colorsEl, p.colors);
+  const rj = card.querySelector(".card__reject");
+  if (rj) rj.hidden = !(p.colors || []).includes("reject");
+}
+
 async function loadPhotos(folderId = null, opts = {}) {
   try {
-    const photos = await invoke("get_photos", { folderId });
-    allPhotos = photos;
+    // Folder scope from the tree panel wins: fetch the ROOT folder, then
+    // narrow by path prefix so subfolders work (C-19.15).
+    const effId = folderScope ? folderScope.rootId : folderId;
+    const photos = await invoke("get_photos", { folderId: effId });
+    let list = photos;
+    if (folderScope && folderScope.path) {
+      list = list.filter((p) => p.path.startsWith(folderScope.path));
+    }
+    allPhotos = list;
     // ALWAYS render into the photos grid: currentGrid may be the rejects
     // grid when a refresh is triggered from there (delete / scan), and
     // painting the full unfiltered list into it caused a visible flash of
@@ -2085,7 +2440,7 @@ async function loadPhotos(folderId = null, opts = {}) {
     const foreground = wasGrid === els.photoGrid;
     currentGrid = els.photoGrid;
     currentScroll = els.viewPhotos;
-    renderPhotos(applyFilters(photos), opts);
+    renderPhotos(applyFilters(list), opts);
     if (!foreground) {
       currentGrid = wasGrid;
       currentScroll = wasScroll;
@@ -2250,9 +2605,8 @@ function showContextMenu(x, y, photo) {
 }
 
 window.addEventListener("contextmenu", (e) => {
-  // Keep the native menu on text fields (copy/paste), replace it elsewhere.
-  const tag = e.target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+  // No native browser menu ANYWHERE (C-19.15): cards get the app's own
+  // context menu, everything else right-click does nothing.
   e.preventDefault();
   const card = e.target.closest(".card");
   if (card && card._photo) {
@@ -2354,11 +2708,20 @@ async function runSearch() {
   const q2 = els.semanticSearchInput.value.trim();
   const qName = els.searchInput.value.trim();
   const mode = els.searchMode.value;
+  // Folder scope (C-19.15): when a folder/subfolder is selected in the tree
+  // panel, search results are restricted to it (root fetch + path prefix).
+  const scoped = (res) => {
+    let list = res || [];
+    if (folderScope && folderScope.path) {
+      list = list.filter((p) => p.path.startsWith(folderScope.path));
+    }
+    return list;
+  };
   if (q2) {
     try {
       const res = await invoke("search", { query: q2, mode });
-      allPhotos = res;
-      renderPhotos(applyFilters(res), { scrollTop: 0 });
+      allPhotos = scoped(res);
+      renderPhotos(applyFilters(allPhotos), { scrollTop: 0 });
     } catch (e) {
       console.error(e);
       renderPhotos([], { scrollTop: 0 });
@@ -2379,7 +2742,7 @@ async function runSearch() {
   }
   try {
     const nameRes = await invoke("search_files", { query: qName });
-    allPhotos = nameRes || [];
+    allPhotos = scoped(nameRes);
     renderPhotos(applyFilters(allPhotos), { scrollTop: 0 });
   } catch (e) {
     console.error(e);

@@ -110,9 +110,23 @@
   "menu": {
     "file": "File",
     "quit": "Quit",
+    "help": "Help",
+    "viewGithub": "View GitHub page",
     "reveal": "Show in File Explorer",
     "wallpaper": "Set as wallpaper",
     "wallpaperSet": "Wallpaper set"
+  },
+  "iconbar": {
+    "tree": "Folder tree",
+    "tag": "Tags",
+    "colors": "Color tags",
+    "eraser": "Eraser: clear tags and colors"
+  },
+  "sidepanel": {
+    "all": "All",
+    "noTags": "No tags",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "preview": {
     "close": "Close preview",
@@ -174,6 +188,7 @@
     "nameRequired": "Please enter a tag name",
     "runButton": "AI Tagging",
     "runStarted": "{count} photos queued for AI tagging",
+    "selectFirst": "Check at least one tag first",
     "runNoTags": "No tags defined yet — add a tag first",
     "clearAll": "Clear tags",
     "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"

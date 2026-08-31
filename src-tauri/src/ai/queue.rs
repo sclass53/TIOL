@@ -66,17 +66,20 @@ pub struct AITask {
     pub path: String, // display path
     epoch: u64,
     pub kind: TaskKind,
+    /// TagAll only: the tag NAMES to match (None = all current tags).
+    /// Set when the user checks specific tags on the Tags page (C-19.15).
+    pub tag_names: Option<Vec<String>>,
 }
 
 impl AITask {
     /// Index-only task (new/changed files): embed, never tag.
     pub fn new(file_id: i64, path: String, epoch: u64) -> Self {
-        Self { file_id, path, epoch, kind: TaskKind::Index }
+        Self { file_id, path, epoch, kind: TaskKind::Index, tag_names: None }
     }
     /// Full tag-list check against every photo missing any current tag
-    /// (the "AI Tagging" button).
-    pub fn tag_all(file_id: i64, path: String, epoch: u64) -> Self {
-        Self { file_id, path, epoch, kind: TaskKind::TagAll }
+    /// (the "AI Tagging" button). `tag_names` limits the pass to those tags.
+    pub fn tag_all(file_id: i64, path: String, epoch: u64, tag_names: Option<Vec<String>>) -> Self {
+        Self { file_id, path, epoch, kind: TaskKind::TagAll, tag_names }
     }
 }
 
@@ -251,6 +254,14 @@ async fn process_one(
     let tagvecs: Vec<TagVec> = match tag_cache.read() {
         Ok(g) => g.clone(),
         Err(_) => Vec::new(),
+    };
+    // C-19.15: a checked subset of tags limits the pass (None = all).
+    let tagvecs: Vec<TagVec> = match &task.tag_names {
+        Some(names) => tagvecs
+            .into_iter()
+            .filter(|tv| names.iter().any(|n| n == &tv.name))
+            .collect(),
+        None => tagvecs,
     };
     if !tagvecs.is_empty() {
         // The "unknown" sentinel must never linger once re-tagging runs —

@@ -113,9 +113,23 @@ export const MESSAGES = {
     "menu": {
       "file": "文件",
       "quit": "退出",
+      "help": "帮助",
+      "viewGithub": "查看 GitHub 页面",
       "reveal": "在文件资源管理器中显示",
       "wallpaper": "设为壁纸",
       "wallpaperSet": "壁纸已设置"
+    },
+    "iconbar": {
+      "tree": "目录树",
+      "tag": "标签",
+      "colors": "颜色标签",
+      "eraser": "橡皮擦：清除标签和颜色"
+    },
+    "sidepanel": {
+      "all": "全部",
+      "noTags": "暂无标签",
+      "expand": "展开",
+      "collapse": "收起"
     },
     "preview": {
       "close": "关闭预览",
@@ -177,6 +191,7 @@ export const MESSAGES = {
       "nameRequired": "请输入标签名称",
       "runButton": "AI 标记",
       "runStarted": "已为 {count} 张照片排队打标",
+      "selectFirst": "请先勾选至少一个标签",
       "runNoTags": "尚未定义标签 — 请先添加标签",
       "clearAll": "清除标记",
       "clearAllConfirm": "将删除所有标签定义和所有照片上的标签（包括手动标签）。此操作不可撤销，确定继续吗？"
@@ -329,9 +344,23 @@ export const MESSAGES = {
     "menu": {
       "file": "File",
       "quit": "Quit",
+      "help": "Help",
+      "viewGithub": "View GitHub page",
       "reveal": "Show in File Explorer",
       "wallpaper": "Set as wallpaper",
       "wallpaperSet": "Wallpaper set"
+    },
+    "iconbar": {
+      "tree": "Folder tree",
+      "tag": "Tags",
+      "colors": "Color tags",
+      "eraser": "Eraser: clear tags and colors"
+    },
+    "sidepanel": {
+      "all": "All",
+      "noTags": "No tags",
+      "expand": "Expand",
+      "collapse": "Collapse"
     },
     "preview": {
       "close": "Close preview",
@@ -393,6 +422,7 @@ export const MESSAGES = {
       "nameRequired": "Please enter a tag name",
       "runButton": "AI Tagging",
       "runStarted": "{count} photos queued for AI tagging",
+      "selectFirst": "Check at least one tag first",
       "runNoTags": "No tags defined yet — add a tag first",
       "clearAll": "Clear tags",
       "clearAllConfirm": "This will delete every tag definition and all tags on all photos (including manual tags). This cannot be undone. Continue?"

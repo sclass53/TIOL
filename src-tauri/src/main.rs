@@ -289,6 +289,66 @@ fn get_folders(state: tauri::State<AppState>) -> Result<Vec<Folder>, String> {
     state.db.get_folders()
 }
 
+/// One node of the folder tree shown in the side panel (C-19.15).
+#[derive(serde::Serialize)]
+struct FolderNode {
+    name: String,
+    path: String,
+    /// Id of the imported ROOT folder this node belongs to — the frontend
+    /// filters photos by the root id + this path prefix.
+    root_id: i64,
+    children: Vec<FolderNode>,
+}
+
+const MAX_TREE_DEPTH: usize = 12;
+
+fn scan_dir_tree(dir: &std::path::Path, depth: usize, root_id: i64) -> Vec<FolderNode> {
+    if depth >= MAX_TREE_DEPTH {
+        return Vec::new();
+    }
+    let mut nodes = Vec::new();
+    let rd = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return nodes,
+    };
+    for entry in rd.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() {
+            continue; // files are not part of the tree (C-19.15)
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue; // skip hidden dirs
+        }
+        nodes.push(FolderNode {
+            name,
+            path: path.to_string_lossy().to_string(),
+            root_id,
+            children: scan_dir_tree(&path, depth + 1, root_id),
+        });
+    }
+    nodes.sort_by(|a, b| a.name.cmp(&b.name));
+    nodes
+}
+
+/// Recursive folder tree under every imported folder (subdirectories only,
+/// no files) — feeds the tree panel (C-19.15).
+#[tauri::command]
+fn get_folder_tree(state: tauri::State<AppState>) -> Result<Vec<FolderNode>, String> {
+    let folders = state.db.get_folders()?;
+    let mut roots = Vec::new();
+    for f in folders {
+        roots.push(FolderNode {
+            name: f.path.clone(),
+            path: f.path.clone(),
+            root_id: f.id,
+            children: scan_dir_tree(std::path::Path::new(&f.path), 0, f.id),
+        });
+    }
+    Ok(roots)
+}
+
 #[tauri::command]
 fn get_photos(
     state: tauri::State<AppState>,
@@ -858,17 +918,32 @@ fn delete_files(state: tauri::State<AppState>, file_ids: Vec<i64>) -> Result<usi
     Ok(deleted)
 }
 
-/// Manual "AI Tagging" (C-12): the ONLY way tagging starts. Enqueues a
-/// full tag-list check (AITask::tag_all) for every file missing at least
-/// one currently-defined custom tag — this covers newly added tags AND
-/// files that were only indexed (or never indexed) since the last pass.
+/// Manual "AI Tagging" (C-12/C-19.15): enqueues a tag-list check
+/// (AITask::tag_all) for every file missing at least one currently-defined
+/// custom tag. `tag_ids` limits the pass to the CHECKED tags on the Tags
+/// page (None/empty = all tags).
 /// Returns how many files were queued.
 #[tauri::command]
-async fn run_ai_tagging(state: tauri::State<'_, AppState>) -> Result<usize, String> {
-    if state.db.get_custom_tags()?.is_empty() {
+async fn run_ai_tagging(
+    state: tauri::State<'_, AppState>,
+    tag_ids: Option<Vec<i64>>,
+) -> Result<usize, String> {
+    let tags = state.db.get_custom_tags()?;
+    if tags.is_empty() {
         log::info!("run_ai_tagging: no tags defined — nothing to do");
         return Err("no tags defined".to_string());
     }
+    // Limit the pass to the checked tags (by name; the engine cache matches
+    // names, and names are unique per the UNIQUE constraint).
+    let tag_names: Option<Vec<String>> = match tag_ids {
+        Some(ids) if !ids.is_empty() => Some(
+            tags.iter()
+                .filter(|t| ids.contains(&t.id))
+                .map(|t| t.name.clone())
+                .collect(),
+        ),
+        _ => None,
+    };
     let db = state.db.clone();
     let tx = state.ai_queue.clone();
     let epoch = state.ai_control.epoch();
@@ -881,7 +956,7 @@ async fn run_ai_tagging(state: tauri::State<'_, AppState>) -> Result<usize, Stri
                 break;
             }
             for (fid, path) in &batch {
-                let mut task = ai::queue::AITask::tag_all(*fid, path.clone(), epoch);
+                let mut task = ai::queue::AITask::tag_all(*fid, path.clone(), epoch, tag_names.clone());
                 // The channel (capacity 1000) can fill up while the consumer
                 // waits for the engine — retry until space frees, so one
                 // click never silently drops files from the pass.
@@ -1512,6 +1587,7 @@ fn main() {
             add_folder,
             remove_folder,
             get_folders,
+            get_folder_tree,
             get_photos,
             search_files,
             search_description,

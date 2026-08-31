@@ -228,6 +228,140 @@ body.platform-mac .titlebar {
   vertical-align: middle;
 }
 
+/* Secondary icon bar (C-19.15): narrow rail between the sidebar and main.
+   Only visible on the photos/rejects pages (switchView toggles the hidden
+   class) — hides with a width/opacity transition. */
+.iconbar {
+  width: 30px;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--separator);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 8px;
+  gap: 4px;
+  overflow: hidden;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+.iconbar--hidden {
+  width: 0;
+  opacity: 0;
+  border-right-color: transparent;
+  pointer-events: none;
+}
+.iconbar__btn {
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+}
+.iconbar__btn:hover,
+.iconbar__btn--active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.iconbar__svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+/* Color-tags icon: a ring around a rainbow conic gradient (C-19.15). */
+.iconbar__colors {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  background: conic-gradient(
+    #ff3b30, #ff9500, #ffcc00, #34c759, #32ade6, #007aff, #af52de, #ff3b30
+  );
+}
+
+/* Slide-out side panel (C-19.15): slides from the LEFT — width animates,
+   squeezing main rightward. 88px leaves exactly 5 photo columns visible
+   (window 1270 − sidebar 172 − iconbar 30 = 1068; 5 cols need 980). */
+.sidepanel {
+  width: 0;
+  flex-shrink: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg-primary);
+  border-right: 1px solid transparent;
+  transition: width 0.28s ease, border-color 0.28s ease;
+}
+.sidepanel--open {
+  width: 190px;
+  border-right-color: var(--separator);
+}
+.sidepanel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  margin-bottom: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Tree rows: triangle toggle + node button (C-19.15). The triangle is a
+   single "▶" glyph that ROTATES 90° when expanded (consistent size + the
+   rotation doubles as the animation). */
+.sidepanel__row {
+  display: flex;
+  align-items: center;
+}
+.sidepanel__tri {
+  width: 16px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+  align-self: stretch;
+  transition: transform 0.2s ease;
+}
+.sidepanel__tri--open {
+  transform: rotate(90deg);
+}
+.sidepanel__tri:hover {
+  color: var(--text-primary);
+}
+.sidepanel__tri-spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+.sidepanel__item--tree {
+  flex: 1;
+  min-width: 0;
+}
+.sidepanel__item:hover {
+  background: var(--bg-surface);
+}
+.sidepanel__item--active {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+.sidepanel__empty {
+  padding: 12px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
 /* Active indicator bar: a dedicated element that GLIDES between nav buttons
    (transform transition) — visible in both collapsed/expanded states. */
 .sidebar {
@@ -1764,6 +1898,14 @@ html[data-theme="light"] .card {
 }
 
 body.fx-anim-off .sidebar__indicator {
+  transition: none;
+}
+/* C-19.15: layout/motion animations follow the same "Effects > Animation"
+   switch — triangle rotation, side panel slide, icon bar and sidebar width. */
+body.fx-anim-off .sidepanel__tri,
+body.fx-anim-off .sidepanel,
+body.fx-anim-off .iconbar,
+body.fx-anim-off .sidebar {
   transition: none;
 }
 
