@@ -297,10 +297,32 @@ struct FolderNode {
     /// Id of the imported ROOT folder this node belongs to — the frontend
     /// filters photos by the root id + this path prefix.
     root_id: i64,
+    /// Total photo count under this node INCLUDING subfolders — equals
+    /// what clicking the node filters for (C-19.17).
+    count: u64,
     children: Vec<FolderNode>,
 }
 
 const MAX_TREE_DEPTH: usize = 12;
+
+/// Fill `count` on EVERY node: total photos under it (incl. subfolders) —
+/// exactly what clicking the node filters for (frontend matches the same
+/// path prefix), so the pill number equals the resulting grid size
+/// (C-19.17). One paths slice per root, matched in memory — cheaper than
+/// a SQL LIKE per node.
+fn fill_leaf_counts(node: &mut FolderNode, paths: &[String]) {
+    // files.path stores the NORMALIZED key (lowercase, forward slashes,
+    // ADD.md §9.1) while node.path is a display path — normalize the
+    // prefix to the same form or every match fails (C-19.17). The slash
+    // is re-added AFTER normalize: it strips trailing separators, and a
+    // bare "e:/img" prefix would also match "e:/img2/...".
+    let mut prefix = crate::utils::normalize_storage_path(&node.path);
+    prefix.push('/');
+    node.count = paths.iter().filter(|p| p.starts_with(&prefix)).count() as u64;
+    for c in &mut node.children {
+        fill_leaf_counts(c, paths);
+    }
+}
 
 fn scan_dir_tree(dir: &std::path::Path, depth: usize, root_id: i64) -> Vec<FolderNode> {
     if depth >= MAX_TREE_DEPTH {
@@ -325,6 +347,7 @@ fn scan_dir_tree(dir: &std::path::Path, depth: usize, root_id: i64) -> Vec<Folde
             name,
             path: path.to_string_lossy().to_string(),
             root_id,
+            count: 0,
             children: scan_dir_tree(&path, depth + 1, root_id),
         });
     }
@@ -339,12 +362,16 @@ fn get_folder_tree(state: tauri::State<AppState>) -> Result<Vec<FolderNode>, Str
     let folders = state.db.get_folders()?;
     let mut roots = Vec::new();
     for f in folders {
-        roots.push(FolderNode {
+        let paths = state.db.get_folder_paths(f.id)?;
+        let mut root = FolderNode {
             name: f.path.clone(),
             path: f.path.clone(),
             root_id: f.id,
+            count: 0,
             children: scan_dir_tree(std::path::Path::new(&f.path), 0, f.id),
-        });
+        };
+        fill_leaf_counts(&mut root, &paths);
+        roots.push(root);
     }
     Ok(roots)
 }

@@ -3,6 +3,32 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.17 · 2025-08 — 文件夹树面板视觉优化（选中背景 margin / 三角位置 / 省略号 / 叶子照片数 pill）
+
+**需求**：① 选中项背景顶到面板两边，加左右 margin；② 折叠三角形位置略偏下；③ 过长文件名要省略号；④ 叶子文件夹右侧用 pill 显示照片数量。
+
+**实现**：
+
+1. **选中背景 margin**（styles.css）：`.sidepanel__item` 由 `width:100%` 改 `width:auto` + `margin: 0 6px 2px`——选中/hover 的胶囊背景不再顶到面板边缘；tags/colors 面板同步受益（同一基类）。
+2. **三角形**（styles.css）：`.sidepanel__tri` 改 flex 居中 + `padding-bottom: 3px`——「▶」字形基线偏低，整体上移一点；`rotate(90deg)` 展开动画不受影响（transform 未占用）。
+3. **省略号**：名称包进 `.sidepanel__label` span（`flex:1; min-width:0; ellipsis`）——原来文字直接挂在 flex 容器上，`text-overflow` 不生效。
+4. **照片数 pill**：后端 `FolderNode` 新增 `count` 字段——`get_folder_tree` 每个根目录一次性取全部文件路径（`db.get_folder_paths`），`fill_leaf_counts` 按前缀在内存计数（避免每节点一条 SQL LIKE）；前端 `count > 0` 时渲染 `.sidepanel__count` pill（title 复用 `folders.count` i18n）。数量随树缓存生命周期更新（markTreeDirty 失效后重取）。
+5. **跟进修复（同日）**：① pill 恒为 0——`files.path` 存的是归一化 key（小写+正斜杠，ADD.md §9.1），而节点是显示路径，前缀永不匹配；`fill_leaf_counts` 先 `normalize_storage_path` 归一化节点路径再补 `/`（补必须在归一化之后：它会剥尾部分隔符，裸前缀会误匹配 `e:/img2`）。② `.sidepanel` 加 `padding: 8px 0`，「全部」不再贴顶。③ 树节点缩进 14px/级 → 10px/级。
+6. **跟进二（同日）**：① 选中态更明显——`.sidepanel__item--active` 由灰底改为 accent 16% 半透明底（`color-mix`，`bg-elevated` 作不支持时的回退）+ accent 文字 + 600 字重，暗色（#0A84FF）/亮色（#007AFF）下均清晰。② 树筛选生效时（`folderScope != null`，含面板关闭后——筛选在面板外仍生效）树图标呈 accent 蓝：新增 `.iconbar__btn--scoped`（声明在 `--active` 之后以覆盖其 color），`syncTreeIcon()` 在「全部」与节点点击两处同步。③ 根节点 paddingLeft 基数 6px → 0（根节点行本身已有 16px 三角列，「全部」到第一层的视觉跳跃过长）；层级步进仍 10px。
+7. **跟进三（同日）**：外层文件夹也显示数量——`fill_leaf_counts` 去掉「仅叶子」分支，所有节点统一按前缀计数，即**该节点（含子目录）的照片总数**，与点击节点的筛选结果一致（pill 数字 = 点击后网格照片数）；前端去掉 `!hasKids` 条件。
+
+## C-19.16 · 2025-08 — 文件夹树缓存失效（修复添加新文件夹后树不显示）
+
+**需求**：添加新文件夹后，左侧文件夹树面板不显示新文件夹（重启应用才出现）；删除的文件夹同理残留。
+
+**根因**：树数据缓存 `treeCache`（app.js）只在树面板首次打开时经 `get_folder_tree` 填充，之后永不失效——面板再次打开时直接渲染旧缓存。后端 `get_folder_tree` 每次实时扫盘，数据本身无误，纯前端缓存问题。
+
+**实现**：
+
+1. **`markTreeDirty()`**：置 `treeCache = null`；若树面板当前打开（`sideMode === "tree"`）则立即 `renderSidePanel("tree")` 原地刷新（展开状态由 `treeExpanded` 保留，与点击节点后的重建路径相同）。
+2. **失效点**：① `add_folder` 成功后；② `remove_folder` 成功后；③ `scan-complete` 事件（扫描可能发现缓存建立后才出现的子目录）。
+3. **代价**：失效后下次打开面板会重新 `get_folder_tree`（一次目录遍历）；打开面板为低频操作，可接受。`treeCache` 原注释「per session」相应更新。
+
 ## C-19.14 · 2025-08 — 搜索栏 bubble 化 + 星数多选筛选 + 全屏按钮 SVG
 
 **需求**：① 最大化按钮偏小（字形差异）；② 顶部搜索栏拆成若干圆角 bubble：文件名搜索、语义/标签+搜索、筛选+星数+多选（带阴影，可开关）；③ 星数筛选改成 0~5 星各自勾选（可同时筛 1 星和 3 星）。

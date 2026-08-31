@@ -313,6 +313,24 @@ impl Db {
         Ok(out)
     }
 
+    /// All file paths under one imported root — feeds the leaf photo counts
+    /// in the folder tree (C-19.17): one query per root, prefix-matched in
+    /// memory by the caller.
+    pub fn get_folder_paths(&self, folder_id: i64) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT path FROM files WHERE folder_id=?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([folder_id], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
     pub fn update_last_scan_time(&self, folder_id: i64, ts: i64) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(

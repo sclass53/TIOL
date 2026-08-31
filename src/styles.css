@@ -266,6 +266,12 @@ body.platform-mac .titlebar {
   background: var(--bg-surface);
   color: var(--text-primary);
 }
+/* A filter is APPLIED from this panel's content (e.g. a folder picked in
+   the tree) even while the panel itself is closed — icon goes accent
+   blue. Declared after --active so it wins while both apply (C-19.17). */
+.iconbar__btn--scoped {
+  color: var(--accent);
+}
 .iconbar__svg {
   width: 14px;
   height: 14px;
@@ -290,6 +296,8 @@ body.platform-mac .titlebar {
   flex-shrink: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  /* Breathing room above the first row ("All") and below the last (C-19.17). */
+  padding: 8px 0;
   background: var(--bg-primary);
   border-right: 1px solid transparent;
   transition: width 0.28s ease, border-color 0.28s ease;
@@ -302,10 +310,12 @@ body.platform-mac .titlebar {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  width: auto;
   text-align: left;
-  padding: 8px 10px;
-  margin-bottom: 2px;
+  padding: 8px 13px;
+  /* Inset the pill so the selection background never touches the panel
+     edges (C-19.17) — mostly padding, little margin (C-19.17). */
+  margin: 0 3px 2px;
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -331,8 +341,13 @@ body.platform-mac .titlebar {
   color: var(--text-secondary);
   font-size: 10px;
   cursor: pointer;
-  padding: 0;
+  /* Flex-centered + small bottom padding: the "▶" glyph metrics sit a
+     little low, this nudges it up (C-19.17). */
+  padding: 0 0 3px;
   align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.2s ease;
 }
 .sidepanel__tri--open {
@@ -349,12 +364,37 @@ body.platform-mac .titlebar {
   flex: 1;
   min-width: 0;
 }
+/* Folder name span: long names ellipsize while the count pill stays
+   visible (C-19.17). */
+.sidepanel__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Photo count pill on leaf folders (C-19.17). */
+.sidepanel__count {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 1px solid var(--separator);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+}
 .sidepanel__item:hover {
   background: var(--bg-surface);
 }
 .sidepanel__item--active {
+  /* Accent-tinted pill: readable in BOTH themes (dark #0A84FF / light
+     #007AFF) — flat elevated gray was too subtle. bg-elevated stays as
+     the fallback for engines without color-mix (C-19.17). */
   background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
+  font-weight: 600;
 }
 .sidepanel__empty {
   padding: 12px 10px;

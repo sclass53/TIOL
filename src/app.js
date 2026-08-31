@@ -214,11 +214,25 @@ let sideColor = null; // selected color (colors mode)
 // photos are fetched for the ROOT folder and narrowed by path prefix so
 // subfolders of an imported folder work too (C-19.15).
 let folderScope = null;
+// Blue icon state on the tree button while a folder filter is applied —
+// the filter SURVIVES closing the panel, so the icon must show it even
+// then (C-19.17).
+function syncTreeIcon() {
+  els.btnPanelTree.classList.toggle("iconbar__btn--scoped", folderScope != null);
+}
 // Expanded subfolder paths in the tree panel — ALL nodes start collapsed
 // (roots too, C-19.15). The tree itself is cached per session so toggling
-// a triangle never re-scans the disk.
+// a triangle never re-scans the disk; the cache is only dropped when the
+// folder set or the filesystem beneath it changes (markTreeDirty, C-19.16).
 const treeExpanded = new Set();
 let treeCache = null;
+
+function markTreeDirty() {
+  treeCache = null;
+  // Re-render in place if the panel is open; expansion state survives via
+  // treeExpanded (same rebuild path as clicking a node).
+  if (sideMode === "tree") renderSidePanel("tree");
+}
 
 function toggleSidePanel(btn, mode) {
   if (sideMode === "eraser") {
@@ -312,6 +326,7 @@ async function renderSidePanel(mode) {
     allBtn.textContent = t("sidepanel.all");
     allBtn.addEventListener("click", () => {
       folderScope = null;
+      syncTreeIcon();
       loadPhotos();
       renderSidePanel("tree");
     });
@@ -346,11 +361,28 @@ async function renderSidePanel(mode) {
       btn.className =
         "sidepanel__item sidepanel__item--tree" +
         (folderScope && folderScope.path === node.path ? " sidepanel__item--active" : "");
-      btn.style.paddingLeft = `${6 + depth * 14}px`;
-      btn.textContent = node.name;
+      // Small base inset so a root's text doesn't hug the pill's left edge;
+      // depth steps stay 10px (C-19.17).
+      btn.style.paddingLeft = `${4 + depth * 10}px`;
       btn.title = node.path;
+      // Name in its own span so long names ellipsize while a leaf count pill
+      // (if any) stays visible (C-19.17).
+      const label = document.createElement("span");
+      label.className = "sidepanel__label";
+      label.textContent = node.name;
+      btn.appendChild(label);
+      // Every folder shows its photo count as a pill — the number equals
+      // what clicking the node filters for (incl. subfolders, C-19.17).
+      if (node.count > 0) {
+        const pill = document.createElement("span");
+        pill.className = "sidepanel__count";
+        pill.textContent = String(node.count);
+        pill.title = t("folders.count", { count: node.count });
+        btn.appendChild(pill);
+      }
       btn.addEventListener("click", () => {
         folderScope = { rootId: node.root_id, path: node.path };
+        syncTreeIcon();
         loadPhotos();
         renderSidePanel("tree");
       });
@@ -2672,6 +2704,7 @@ function renderFolders(folders) {
       btn.addEventListener("click", async () => {
         await invoke("remove_folder", { id: f.id });
         markFoldersDirty();
+        markTreeDirty();
         loadFolders();
         loadPhotos();
       });
@@ -3019,6 +3052,7 @@ els.btnAdd.addEventListener("click", async () => {
     await invoke("add_folder", { path });
     onboardingAfterAdd();
     markFoldersDirty();
+    markTreeDirty();
     await loadFolders();
     await loadPhotos();
   } catch (e) {
@@ -3049,6 +3083,9 @@ listen("scan-complete", async () => {
   // New/changed files may need reject metrics — allow one more analysis pass.
   rejectAnalysisTriggered = false;
   markFoldersDirty();
+  // A scan may surface subdirectories that didn't exist when the tree was
+  // cached (C-19.16).
+  markTreeDirty();
   // Serialized: concurrent loadPhotos/loadRejects would cross-paint into the
   // other grid (C-19.11).
   await loadPhotos();
