@@ -5,7 +5,7 @@ English | [中文](README.zh.md)
 
 Your privacy-first, local-first photo manager. Automatically tags photos. Built-in fast, intelligent searching. 
 
-![示例图片](examples/example.png)
+![示例图片](examples/example.jpg)
 
 Supports **MacOS**, **Windows**, and **Linux**. 
 

@@ -5,7 +5,7 @@
 
 隐私优先，本地优先的照片管理应用。自动为您的摄影作品打标签。支持快速，智能的搜索。
 
-![示例图片](examples/example.png)
+![示例图片](examples/example.jpg)
 
 支持 **MacOS**, **Windows**, 和**Linux**。
 
