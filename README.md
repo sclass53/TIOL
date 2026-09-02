@@ -15,6 +15,8 @@ All photos stay on your own hard drive. AI inference runs completely offline. No
 
 - 🔍 **AI Powered Dual Search**: **Semantic search** (simply describe what you're looking for, e.g., *"a cup of coffee"*) + **Tag search** (fast)
 
+- 📄 **Filter redundant images**: One-click organization of redundant and blurry/overexposed images.
+
 - 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML，etc.
 
 - ⚡ **Lightweight**: ~50MB in size，single exe and system onnx driver，provides portable editions。

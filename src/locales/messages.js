@@ -112,7 +112,9 @@ export const MESSAGES = {
     },
     "menu": {
       "file": "文件",
+      "import": "导入文件夹",
       "quit": "退出",
+      "view": "视图",
       "help": "帮助",
       "viewGithub": "查看 GitHub 页面",
       "reveal": "在文件资源管理器中显示",
@@ -123,7 +125,14 @@ export const MESSAGES = {
       "tree": "目录树",
       "tag": "标签",
       "colors": "颜色标签",
-      "eraser": "橡皮擦：清除标签和颜色"
+      "eraser": "橡皮擦：清除标签和颜色",
+      "duplicates": "重复照片"
+    },
+    "duplicates": {
+      "analyzing": "正在分析重复照片…",
+      "summary": "发现 {count} 组重复照片",
+      "none": "没有重复照片",
+      "error": "重复分析失败"
     },
     "sidepanel": {
       "all": "全部",
@@ -135,7 +144,8 @@ export const MESSAGES = {
       "close": "关闭预览",
       "error": "无法预览此文件",
       "lens": "镜头：{lens}",
-      "focal": "焦距：{focal} mm"
+      "focal": "焦距：{focal} mm",
+      "resolution": "分辨率：{width}×{height} px"
     },
     "dialog": {
       "confirmTitle": "确认操作",
@@ -343,7 +353,9 @@ export const MESSAGES = {
     },
     "menu": {
       "file": "File",
+      "import": "Import folder",
       "quit": "Quit",
+      "view": "View",
       "help": "Help",
       "viewGithub": "View GitHub page",
       "reveal": "Show in File Explorer",
@@ -354,7 +366,14 @@ export const MESSAGES = {
       "tree": "Folder tree",
       "tag": "Tags",
       "colors": "Color tags",
-      "eraser": "Eraser: clear tags and colors"
+      "eraser": "Eraser: clear tags and colors",
+      "duplicates": "Duplicate photos"
+    },
+    "duplicates": {
+      "analyzing": "Analyzing duplicates…",
+      "summary": "{count} duplicate group(s) found",
+      "none": "No duplicate photos",
+      "error": "Duplicate analysis failed"
     },
     "sidepanel": {
       "all": "All",
@@ -366,7 +385,8 @@ export const MESSAGES = {
       "close": "Close preview",
       "error": "Cannot preview this file",
       "lens": "Lens: {lens}",
-      "focal": "Focal length: {focal} mm"
+      "focal": "Focal length: {focal} mm",
+      "resolution": "Resolution: {width}×{height} px"
     },
     "dialog": {
       "confirmTitle": "Confirm action",

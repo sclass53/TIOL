@@ -17,7 +17,14 @@
       <div class="titlebar__menu">
         <button class="titlebar__menu-btn" id="btn-app-menu" data-i18n="menu.file">文件</button>
         <div class="titlebar__menu-panel" id="app-menu-panel" hidden>
+          <button class="titlebar__menu-item" id="app-menu-import" data-i18n="menu.import">导入文件夹</button>
           <button class="titlebar__menu-item" id="app-menu-quit" data-i18n="menu.quit">退出</button>
+        </div>
+        <button class="titlebar__menu-btn" id="btn-app-menu-view" data-i18n="menu.view">视图</button>
+        <div class="titlebar__menu-panel" id="app-menu-view-panel" hidden>
+          <button class="titlebar__menu-item" id="app-menu-view-gallery" data-i18n="nav.photos">照片</button>
+          <button class="titlebar__menu-item" id="app-menu-view-rejects" data-i18n="nav.rejects">废片</button>
+          <button class="titlebar__menu-item" id="app-menu-view-dups" data-i18n="iconbar.duplicates">重复照片</button>
         </div>
         <button class="titlebar__menu-btn" id="btn-app-menu-help" data-i18n="menu.help">帮助</button>
         <div class="titlebar__menu-panel" id="app-menu-help-panel" hidden>
@@ -41,7 +48,6 @@
       <button class="sidebar__btn sidebar__btn--active" id="nav-photos" data-i18n-title="nav.photos" data-i18n-aria="nav.photos"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M512 144v288c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V144c0-26.5 21.5-48 48-48h88l12.3-32.9c7-18.7 24.9-31.1 44.9-31.1h125.5c20 0 37.9 12.4 44.9 31.1L376 96h88c26.5 0 48 21.5 48 48zM376 288c0-66.2-53.8-120-120-120s-120 53.8-120 120 53.8 120 120 120 120-53.8 120-120zm-32 0c0 48.5-39.5 88-88 88s-88-39.5-88-88 39.5-88 88-88 88 39.5 88 88z"/></svg></span><span class="sidebar__label" data-i18n="nav.photos">照片</span></button>
       <button class="sidebar__btn" id="nav-folders" data-i18n-title="nav.folders" data-i18n-aria="nav.folders"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 576 512" aria-hidden="true"><path fill="currentColor" d="M527.9 224H480v-48c0-26.5-21.5-48-48-48H272l-64-64H48C21.5 64 0 85.5 0 112v288c0 26.5 21.5 48 48 48h400c16.5 0 31.9-8.5 40.7-22.6l79.9-128c20-31.9-3-73.4-40.7-73.4zM48 118c0-3.3 2.7-6 6-6h134.1l64 64H426c3.3 0 6 2.7 6 6v42H152c-16.8 0-32.4 8.8-41.1 23.2L48 351.4zm400 282H72l77.2-128H528z"/></svg></span><span class="sidebar__label" data-i18n="nav.folders">目录</span></button>
       <button class="sidebar__btn" id="nav-tags" data-i18n-title="nav.tags" data-i18n-aria="nav.tags"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 640 512" aria-hidden="true"><path fill="currentColor" d="M497.941 225.941L286.059 14.059A48 48 0 0 0 252.118 0H48C21.49 0 0 21.49 0 48v204.118a48 48 0 0 0 14.059 33.941l211.882 211.882c18.744 18.745 49.136 18.746 67.882 0l204.118-204.118c18.745-18.745 18.745-49.137 0-67.882zM112 160c-26.51 0-48-21.49-48-48s21.49-48 48-48 48 21.49 48 48-21.49 48-48 48zm513.941 133.823L421.823 497.941c-18.745 18.745-49.137 18.745-67.882 0l-.36-.36L527.64 323.522c16.999-16.999 26.36-39.6 26.36-63.64s-9.362-46.641-26.36-63.64L331.397 0h48.721a48 48 0 0 1 33.941 14.059l211.882 211.882c18.745 18.745 18.745 49.137 0 67.882z"/></svg></span><span class="sidebar__label" data-i18n="nav.tags">标签</span></button>
-      <button class="sidebar__btn" id="nav-rejects" data-i18n-title="nav.rejects" data-i18n-aria="nav.rejects"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 448 512" aria-hidden="true"><path fill="currentColor" d="M268 416h24a12 12 0 0 0 12-12V188a12 12 0 0 0-12-12h-24a12 12 0 0 0-12 12v216a12 12 0 0 0 12 12zM432 80h-82.41l-34-56.7A48 48 0 0 0 274.41 0H173.59a48 48 0 0 0-41.16 23.3L98.41 80H16A16 16 0 0 0 0 96v16a16 16 0 0 0 16 16h16v336a48 48 0 0 0 48 48h288a48 48 0 0 0 48-48V128h16a16 16 0 0 0 16-16V96a16 16 0 0 0-16-16zM171.84 50.91A6 6 0 0 1 177 48h94a6 6 0 0 1 5.15 2.91L293.61 80H154.39zM368 464H80V128h288zm-212-48h24a12 12 0 0 0 12-12V188a12 12 0 0 0-12-12h-24a12 12 0 0 0-12 12v216a12 12 0 0 0 12 12z"/></svg></span><span class="sidebar__label" data-i18n="nav.rejects">废片</span></button>
       <button class="sidebar__btn" id="nav-settings" data-i18n-title="nav.settings" data-i18n-aria="nav.settings"><span class="sidebar__icon"><svg class="sidebar__svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M487.4 315.7l-42.6-24.6c4.3-23.2 4.3-47 0-70.2l42.6-24.6c4.9-2.8 7.1-8.6 5.5-14-11.1-35.6-30-67.8-54.7-94.6-3.8-4.1-10-5.1-14.8-2.3L380.8 110c-17.9-15.4-38.5-27.3-60.8-35.1V25.8c0-5.6-3.9-10.5-9.4-11.7-36.7-8.2-74.3-7.8-109.2 0-5.5 1.2-9.4 6.1-9.4 11.7V75c-22.2 7.9-42.8 19.8-60.8 35.1L88.7 85.5c-4.9-2.8-11-1.9-14.8 2.3-24.7 26.7-43.6 58.9-54.7 94.6-1.7 5.4.6 11.2 5.5 14L67.3 221c-4.3 23.2-4.3 47 0 70.2l-42.6 24.6c-4.9 2.8-7.1 8.6-5.5 14 11.1 35.6 30 67.8 54.7 94.6 3.8 4.1 10 5.1 14.8 2.3l42.6-24.6c17.9 15.4 38.5 27.3 60.8 35.1v49.2c0 5.6 3.9 10.5 9.4 11.7 36.7 8.2 74.3 7.8 109.2 0 5.5-1.2 9.4-6.1 9.4-11.7v-49.2c22.2-7.9 42.8-19.8 60.8-35.1l42.6 24.6c4.9 2.8 11 1.9 14.8-2.3 24.7-26.7 43.6-58.9 54.7-94.6 1.5-5.5-.7-11.3-5.6-14.1zM256 336c-44.1 0-80-35.9-80-80s35.9-80 80-80 80 35.9 80 80-35.9 80-80 80z"/></svg></span><span class="sidebar__label" data-i18n="nav.settings">设置</span></button>
       <button class="sidebar__toggle" id="sidebar-toggle" title="收起菜单"><span class="sidebar__icon">◀</span><span class="sidebar__label" data-i18n="sidebar.collapse">收起菜单</span></button>
     </nav>
@@ -49,6 +55,16 @@
     <!-- Secondary icon bar (C-19.15): narrow tool rail right of the sidebar.
          Clicking a button slides out an empty side panel (squeezing main). -->
     <nav class="iconbar" id="iconbar" aria-label="Tools">
+      <button class="iconbar__btn" id="btn-gallery-view" data-i18n-title="nav.photos">
+        <svg class="iconbar__svg" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="currentColor" d="M288 287.872V64H64v224l224-0.128z m112 672h224V736h-224v224z m-336 0h224V736H64v224z m0-336h224v-224H64v224z m336 0h224v-224h-224v224z m336-336H960V64h-224v223.872z m-112 0V64h-224v224l224-0.128zM960 623.872v-224h-224v224H960z m0 336V736h-224v224H960z"/></svg>
+      </button>
+      <button class="iconbar__btn" id="btn-rejects-view" data-i18n-title="nav.rejects">
+        <svg class="iconbar__svg" viewBox="0 0 448 512" aria-hidden="true"><path fill="currentColor" d="M268 416h24a12 12 0 0 0 12-12V188a12 12 0 0 0-12-12h-24a12 12 0 0 0-12 12v216a12 12 0 0 0 12 12zM432 80h-82.41l-34-56.7A48 48 0 0 0 274.41 0H173.59a48 48 0 0 0-41.16 23.3L98.41 80H16A16 16 0 0 0 0 96v16a16 16 0 0 0 16 16h16v336a48 48 0 0 0 48 48h288a48 48 0 0 0 48-48V128h16a16 16 0 0 0 16-16V96a16 16 0 0 0-16-16zM171.84 50.91A6 6 0 0 1 177 48h94a6 6 0 0 1 5.15 2.91L293.61 80H154.39zM368 464H80V128h288zm-212-48h24a12 12 0 0 0 12-12V188a12 12 0 0 0-12-12h-24a12 12 0 0 0-12 12v216a12 12 0 0 0 12 12z"/></svg>
+      </button>
+      <button class="iconbar__btn" id="btn-dup-view" data-i18n-title="iconbar.duplicates">
+        <svg class="iconbar__svg" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="currentColor" d="M931.882 131.882l-103.764-103.764A96 96 0 0 0 760.236 0H416c-53.02 0-96 42.98-96 96v96H160c-53.02 0-96 42.98-96 96v640c0 53.02 42.98 96 96 96h448c53.02 0 96-42.98 96-96v-96h160c53.02 0 96-42.98 96-96V199.764a96 96 0 0 0-28.118-67.882zM596 928H172a12 12 0 0 1-12-12V300a12 12 0 0 1 12-12h148v448c0 53.02 42.98 96 96 96h192v84a12 12 0 0 1-12 12z m256-192H428a12 12 0 0 1-12-12V108a12 12 0 0 1 12-12h212v176c0 26.51 21.49 48 48 48h176v404a12 12 0 0 1-12 12z m12-512h-128V96h19.264c3.182 0 6.234 1.264 8.486 3.514l96.736 96.736a12 12 0 0 1 3.514 8.486V224z"/></svg>
+      </button>
+      <div class="iconbar__sep" aria-hidden="true"></div>
       <button class="iconbar__btn" id="btn-panel-tree" data-i18n-title="iconbar.tree">
         <svg class="iconbar__svg" viewBox="0 0 1152 1024" aria-hidden="true"><path fill="currentColor" d="M576 448h448a64 64 0 0 0 64-64V128a64 64 0 0 0-64-64H800L736 0h-160a64 64 0 0 0-64 64v144H160V32A32 32 0 0 0 128 0H96a32 32 0 0 0-32 32v784a64 64 0 0 0 64 64h384v80a64 64 0 0 0 64 64h448a64 64 0 0 0 64-64V704a64 64 0 0 0-64-64H800l-64-64h-160a64 64 0 0 0-64 64v144H160V304h352v80a64 64 0 0 0 64 64z m32-352h88.24l64 64H992v192H608z m0 576h88.24l64 64H992v192H608z"/></svg>
       </button>
@@ -64,8 +80,10 @@
     </nav>
 
     <!-- Slide-out side panel (C-19.15): slides in from the LEFT (squeezing
-         main rightward); empty for now. -->
+         main rightward). -->
     <aside class="sidepanel" id="side-panel"></aside>
+    <!-- Draggable divider between the side panel and main (C-19.20) -->
+    <div class="panel-resizer" id="panel-resizer"></div>
 
     <main class="main">
       <!-- Photos view -->
@@ -138,6 +156,24 @@
         </div>
         <div class="grid" id="reject-grid"></div>
         <div class="statusbar" id="reject-status">0 photos</div>
+      </section>
+
+      <!-- Duplicates view (C-19.17): pixel-identical photo groups — one
+           group per row (wrapping to the next line when too wide). Cards
+           can't be rated or tag-edited (shorter height), multi-select works. -->
+      <section class="view view--hidden" id="view-duplicates">
+        <div class="searchbar">
+          <div class="searchbar__bubble searchbar__bubble--search">
+            <span class="dup-status" id="dup-status"></span>
+          </div>
+          <div class="searchbar__bubble searchbar__bubble--actions">
+            <button class="btn btn--ghost searchbar__filter" id="btn-color-filter-dup" data-i18n="photos.filterBtn" data-i18n-title="photos.filterColor">筛选</button>
+            <button class="btn btn--ghost searchbar__filter" id="btn-rating-filter-dup" data-i18n="photos.ratingBtn" data-i18n-title="photos.ratingFilter">星数</button>
+            <button class="btn searchbar__select" id="btn-dup-select" data-i18n="photos.selectMode">多选</button>
+          </div>
+        </div>
+        <div class="grid dup-grid" id="dup-grid"></div>
+        <div class="statusbar" id="dup-statusbar"></div>
       </section>
 
       <!-- Settings view -->

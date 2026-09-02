@@ -376,6 +376,64 @@ fn get_folder_tree(state: tauri::State<AppState>) -> Result<Vec<FolderNode>, Str
     Ok(roots)
 }
 
+/// Scope for the duplicate scan (C-19.17): restrict to one imported folder
+/// (or a subfolder via the path prefix). Mirrors the tree panel selection.
+#[derive(serde::Deserialize)]
+struct DupScope {
+    folder_id: i64,
+    path: String,
+}
+
+/// Pixel-level duplicate detection (C-19.17): two photos are duplicates when
+/// their decoded pixels are identical. Hashing the GENERATED THUMBNAIL files
+/// is the trick: the thumbnail encoder is deterministic, so identical pixels
+/// -> byte-identical thumbnails — even across re-encodes, different formats
+/// and different file sizes. Missing thumbnails are generated on the spot.
+#[tauri::command]
+async fn find_duplicates(
+    state: tauri::State<'_, AppState>,
+    scope: Option<DupScope>,
+) -> Result<Vec<Vec<crate::db::FileRecord>>, String> {
+    let db = state.db.clone();
+    let app_dir = state.app_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<Vec<crate::db::FileRecord>>, String> {
+        let files = db.get_all_files_full()?;
+        let files: Vec<crate::db::FileRecord> = match &scope {
+            Some(s) => files
+                .into_iter()
+                .filter(|f| f.folder_id == s.folder_id && f.path.starts_with(&s.path))
+                .collect(),
+            None => files,
+        };
+        let cache = utils::cache_dir(&app_dir);
+        let mut by_hash: std::collections::HashMap<String, Vec<crate::db::FileRecord>> =
+            std::collections::HashMap::new();
+        for f in files {
+            let p = std::path::Path::new(&f.path);
+            let thumb = utils::thumbnail_path(&cache, &f.path, f.mtime);
+            if !thumb.exists() {
+                // Corrupt/unsupported files can't be compared — skip them.
+                if utils::generate_thumbnail(p, &thumb).is_err() {
+                    continue;
+                }
+            }
+            match crate::update::sha256_hex(&thumb) {
+                Ok(h) => {
+                    by_hash.entry(h).or_default().push(f);
+                }
+                Err(_) => continue,
+            }
+        }
+        let mut groups: Vec<Vec<crate::db::FileRecord>> =
+            by_hash.into_values().filter(|g| g.len() >= 2).collect();
+        groups.sort_by(|a, b| a[0].path.cmp(&b[0].path));
+        log::info!("find_duplicates: {} duplicate groups", groups.len());
+        Ok(groups)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn get_photos(
     state: tauri::State<AppState>,
@@ -1615,6 +1673,7 @@ fn main() {
             remove_folder,
             get_folders,
             get_folder_tree,
+            find_duplicates,
             get_photos,
             search_files,
             search_description,

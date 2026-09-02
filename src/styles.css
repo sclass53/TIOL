@@ -109,6 +109,12 @@ body {
 .titlebar__menu-item:hover {
   background: var(--bg-surface);
 }
+/* Current-view marker in the View menu (C-19.19) */
+.titlebar__menu-item--active {
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font-weight: 600;
+}
 /* Window controls: three separate buttons (C-19.13) */
 .titlebar__controls {
   display: flex;
@@ -239,8 +245,8 @@ body.platform-mac .titlebar {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding-top: 8px;
-  gap: 4px;
+  padding-top: 4px;
+  gap: 2px; /* compact (C-19.19) */
   overflow: hidden;
   transition: width 0.2s ease, opacity 0.2s ease;
 }
@@ -251,7 +257,7 @@ body.platform-mac .titlebar {
   pointer-events: none;
 }
 .iconbar__btn {
-  height: 34px;
+  height: 30px; /* compact (C-19.19) */
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -277,6 +283,14 @@ body.platform-mac .titlebar {
   height: 14px;
   display: block;
 }
+/* Separates the view switchers (gallery/rejects/duplicates) from the tools
+   (tree/tags/colors/eraser) — C-19.19. */
+.iconbar__sep {
+  height: 1px;
+  background: var(--separator);
+  margin: 2px 6px;
+  flex-shrink: 0;
+}
 /* Color-tags icon: a ring around a rainbow conic gradient (C-19.15). */
 .iconbar__colors {
   width: 14px;
@@ -296,6 +310,7 @@ body.platform-mac .titlebar {
   flex-shrink: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  position: relative;
   /* Breathing room above the first row ("All") and below the last (C-19.17). */
   padding: 8px 0;
   background: var(--bg-primary);
@@ -303,8 +318,29 @@ body.platform-mac .titlebar {
   transition: width 0.28s ease, border-color 0.28s ease;
 }
 .sidepanel--open {
-  width: 190px;
+  width: var(--sp-w, 190px);
   border-right-color: var(--separator);
+}
+/* Draggable divider between the panel and main (C-19.20) — a real flex item
+   between the two, so it is always clickable (an absolute handle inside the
+   overflow container was not). Hidden while the panel is closed. */
+.panel-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: ew-resize;
+  background: transparent;
+  display: none;
+}
+.panel-resizer--on {
+  display: block;
+}
+.panel-resizer:hover {
+  background: var(--accent);
+  opacity: 0.6;
+}
+/* No width transition while dragging — it would fight the mouse. */
+.sidepanel--resizing {
+  transition: none;
 }
 .sidepanel__item {
   display: flex;
@@ -1234,6 +1270,46 @@ body.platform-mac .titlebar {
   padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;
+}
+
+/* Duplicates view (C-19.17): pixel-identical groups. Cards are shorter —
+   no star row, no tag editor — but multi-select still applies. */
+.dup-status {
+  color: var(--text-primary);
+  font-size: 14px;
+  padding: 0 10px;
+}
+.dup-grid {
+  align-content: flex-start;
+}
+.dup-group {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dup-group + .dup-group {
+  margin-top: 18px;
+}
+.card--dup {
+  height: 172px; /* no stars (18px) / no edit row, + a folder-path line */
+}
+.card--dup .card__meta {
+  justify-content: flex-start;
+  padding-left: 6px;
+}
+.card--dup .card__meta-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card--dup .card__dup-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* Status bar — sticks to the bottom of the scrolling view (C-19.14) */

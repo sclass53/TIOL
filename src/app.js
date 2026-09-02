@@ -34,7 +34,7 @@ const els = {
   navPhotos: document.getElementById("nav-photos"),
   navFolders: document.getElementById("nav-folders"),
   navTags: document.getElementById("nav-tags"),
-  navRejects: document.getElementById("nav-rejects"),
+  navRejects: null, // moved to the icon bar (btn-rejects-view, C-19.19)
   navSettings: document.getElementById("nav-settings"),
   // Custom titlebar (C-19.13)
   btnWinMin: document.getElementById("btn-win-min"),
@@ -43,7 +43,13 @@ const els = {
   // In-app menubar (C-19.15)
   btnAppMenu: document.getElementById("btn-app-menu"),
   appMenuPanel: document.getElementById("app-menu-panel"),
+  appMenuImport: document.getElementById("app-menu-import"),
   appMenuQuit: document.getElementById("app-menu-quit"),
+  btnAppMenuView: document.getElementById("btn-app-menu-view"),
+  appMenuViewPanel: document.getElementById("app-menu-view-panel"),
+  appMenuViewGallery: document.getElementById("app-menu-view-gallery"),
+  appMenuViewRejects: document.getElementById("app-menu-view-rejects"),
+  appMenuViewDups: document.getElementById("app-menu-view-dups"),
   btnAppMenuHelp: document.getElementById("btn-app-menu-help"),
   appMenuHelpPanel: document.getElementById("app-menu-help-panel"),
   appMenuGithub: document.getElementById("app-menu-github"),
@@ -54,11 +60,22 @@ const els = {
   btnPanelColors: document.getElementById("btn-panel-colors"),
   btnPanelEraser: document.getElementById("btn-panel-eraser"),
   sidePanel: document.getElementById("side-panel"),
+  panelResizer: document.getElementById("panel-resizer"),
   viewPhotos: document.getElementById("view-photos"),
   viewFolders: document.getElementById("view-folders"),
   viewTags: document.getElementById("view-tags"),
   viewRejects: document.getElementById("view-rejects"),
   viewSettings: document.getElementById("view-settings"),
+  viewDuplicates: document.getElementById("view-duplicates"),
+  dupGrid: document.getElementById("dup-grid"),
+  dupStatus: document.getElementById("dup-status"),
+  dupStatusbar: document.getElementById("dup-statusbar"),
+  btnDupSelect: document.getElementById("btn-dup-select"),
+  btnDupView: document.getElementById("btn-dup-view"),
+  btnRejectsView: document.getElementById("btn-rejects-view"),
+  btnGalleryView: document.getElementById("btn-gallery-view"),
+  btnColorFilterDup: document.getElementById("btn-color-filter-dup"),
+  btnRatingFilterDup: document.getElementById("btn-rating-filter-dup"),
   langOptions: document.getElementById("lang-options"),
   themeOptions: document.getElementById("theme-options"),
   toggleFxAnim: document.getElementById("toggle-fx-anim"),
@@ -171,14 +188,45 @@ els.btnAppMenu.addEventListener("click", (e) => {
   e.stopPropagation();
   els.appMenuPanel.hidden = !els.appMenuPanel.hidden;
   els.appMenuHelpPanel.hidden = true;
+  els.appMenuViewPanel.hidden = true;
+});
+els.btnAppMenuView.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.appMenuViewPanel.hidden = !els.appMenuViewPanel.hidden;
+  els.appMenuPanel.hidden = true;
+  els.appMenuHelpPanel.hidden = true;
+  // Highlight the item matching the current view (C-19.19).
+  const on = (btn, active) => btn.classList.toggle("titlebar__menu-item--active", active);
+  on(els.appMenuViewGallery, !els.viewPhotos.classList.contains("view--hidden"));
+  on(els.appMenuViewRejects, !els.viewRejects.classList.contains("view--hidden"));
+  on(els.appMenuViewDups, !els.viewDuplicates.classList.contains("view--hidden"));
 });
 els.btnAppMenuHelp.addEventListener("click", (e) => {
   e.stopPropagation();
   els.appMenuHelpPanel.hidden = !els.appMenuHelpPanel.hidden;
   els.appMenuPanel.hidden = true;
+  els.appMenuViewPanel.hidden = true;
 });
 els.appMenuQuit.addEventListener("click", () => {
   appWindow.close().catch((e) => reportJs("titlebar", String(e)));
+});
+// View menu items switch to the corresponding view (C-19.19).
+els.appMenuViewGallery.addEventListener("click", () => {
+  els.appMenuViewPanel.hidden = true;
+  switchView("photos");
+  if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) loadPhotos();
+});
+els.appMenuViewRejects.addEventListener("click", () => {
+  els.appMenuViewPanel.hidden = true;
+  switchView("rejects");
+  loadRejects();
+  renderRejectConds();
+  ensureRejectAnalysis();
+});
+els.appMenuViewDups.addEventListener("click", () => {
+  els.appMenuViewPanel.hidden = true;
+  switchView("duplicates");
+  loadDuplicates();
 });
 // Kill the WebView2 native context menu everywhere — the app's own card
 // context menu (ctx-menu) handles right-clicks on cards; everywhere else a
@@ -197,6 +245,9 @@ els.appMenuGithub.addEventListener("click", () => {
 document.addEventListener("click", (e) => {
   if (!els.appMenuPanel.hidden && !e.target.closest("#btn-app-menu, #app-menu-panel")) {
     els.appMenuPanel.hidden = true;
+  }
+  if (!els.appMenuViewPanel.hidden && !e.target.closest("#btn-app-menu-view, #app-menu-view-panel")) {
+    els.appMenuViewPanel.hidden = true;
   }
   if (!els.appMenuHelpPanel.hidden && !e.target.closest("#btn-app-menu-help, #app-menu-help-panel")) {
     els.appMenuHelpPanel.hidden = true;
@@ -241,6 +292,7 @@ function toggleSidePanel(btn, mode) {
   if (sidePanelBtn === btn) {
     // Same button again: close.
     els.sidePanel.classList.remove("sidepanel--open");
+    els.panelResizer.classList.remove("panel-resizer--on");
     btn.classList.remove("iconbar__btn--active");
     sidePanelBtn = null;
     sideMode = null;
@@ -248,12 +300,50 @@ function toggleSidePanel(btn, mode) {
   }
   // Open (or switch to) this button's panel.
   els.sidePanel.classList.add("sidepanel--open");
+  els.sidePanel.style.setProperty("--sp-w", `${sidePanelWidth}px`); // persisted width (C-19.20)
+  els.panelResizer.classList.add("panel-resizer--on");
   if (sidePanelBtn) sidePanelBtn.classList.remove("iconbar__btn--active");
   sidePanelBtn = btn;
   sidePanelBtn.classList.add("iconbar__btn--active");
   sideMode = mode;
   renderSidePanel(mode);
 }
+
+// Draggable divider between the side panel and main (C-19.20): long tag
+// names etc. can widen the panel. Width is clamped, persisted, and survives
+// reopen/restart.
+let sidePanelWidth = 190;
+try {
+  sidePanelWidth =
+    parseInt(localStorage.getItem("tiol-sidepanel-w"), 10) || 190;
+} catch (e) {
+  /* ignore */
+}
+els.panelResizer.addEventListener("mousedown", (e) => {
+  if (!els.sidePanel.classList.contains("sidepanel--open")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const startX = e.clientX;
+  const startW = sidePanelWidth;
+  els.sidePanel.classList.add("sidepanel--resizing");
+  const onMove = (ev) => {
+    const w = Math.min(Math.max(startW + (ev.clientX - startX), 120), 560);
+    sidePanelWidth = w;
+    els.sidePanel.style.setProperty("--sp-w", `${w}px`);
+  };
+  const onUp = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    els.sidePanel.classList.remove("sidepanel--resizing");
+    try {
+      localStorage.setItem("tiol-sidepanel-w", String(sidePanelWidth));
+    } catch (e) {
+      /* ignore */
+    }
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+});
 
 // Eraser mode (C-19.15): NO side panel — clicking photos strips all tags
 // and colors. Clicking the eraser again (or any other icon) exits it.
@@ -328,6 +418,9 @@ async function renderSidePanel(mode) {
       folderScope = null;
       syncTreeIcon();
       loadPhotos();
+      // The duplicates view lives off the folder scope — refresh it live
+      // when it is open (C-19.19).
+      if (!els.viewDuplicates.classList.contains("view--hidden")) loadDuplicates();
       renderSidePanel("tree");
     });
     p.appendChild(allBtn);
@@ -384,6 +477,7 @@ async function renderSidePanel(mode) {
         folderScope = { rootId: node.root_id, path: node.path };
         syncTreeIcon();
         loadPhotos();
+        if (!els.viewDuplicates.classList.contains("view--hidden")) loadDuplicates();
         renderSidePanel("tree");
       });
       row.appendChild(btn);
@@ -463,29 +557,49 @@ function switchView(name) {
   // "leaving a grid" check must reason about where we came FROM (C-19.11).
   const prevPhotosVisible = !els.viewPhotos.classList.contains("view--hidden");
   const prevRejectsVisible = !els.viewRejects.classList.contains("view--hidden");
+  const prevDupVisible = !els.viewDuplicates.classList.contains("view--hidden");
   const isPhotos = name === "photos";
   const isFolders = name === "folders";
   const isTags = name === "tags";
   const isRejects = name === "rejects";
+  const isDup = name === "duplicates";
   els.viewPhotos.classList.toggle("view--hidden", !isPhotos);
   els.viewFolders.classList.toggle("view--hidden", !isFolders);
   els.viewTags.classList.toggle("view--hidden", !isTags);
   els.viewRejects.classList.toggle("view--hidden", !isRejects);
+  els.viewDuplicates.classList.toggle("view--hidden", !isDup);
   els.viewSettings.classList.toggle("view--hidden", name !== "settings");
-  els.navPhotos.classList.toggle("sidebar__btn--active", isPhotos);
+  els.navPhotos.classList.toggle(
+    "sidebar__btn--active",
+    isPhotos || isRejects || isDup // rejects/duplicates belong to the camera page (C-19.19)
+  );
   els.navFolders.classList.toggle("sidebar__btn--active", isFolders);
   els.navTags.classList.toggle("sidebar__btn--active", isTags);
-  els.navRejects.classList.toggle("sidebar__btn--active", isRejects);
   els.navSettings.classList.toggle("sidebar__btn--active", name === "settings");
+  // The rejects/duplicates/gallery live on the icon bar — each lights up
+  // accent blue while its page is active (C-19.19).
+  if (els.btnGalleryView) {
+    els.btnGalleryView.classList.toggle("iconbar__btn--scoped", isPhotos);
+  }
+  if (els.btnRejectsView) {
+    els.btnRejectsView.classList.toggle("iconbar__btn--scoped", isRejects);
+  }
+  if (els.btnDupView) {
+    els.btnDupView.classList.toggle("iconbar__btn--scoped", isDup);
+  }
   // Photo grids: switch the target of all grid operations (C-19). The VIEW
   // is the scroll container (C-19.14) — currentScroll tracks it alongside.
-  // The icon bar only exists on the grid pages (animated hide elsewhere).
+  // The icon bar exists on the grid pages AND the duplicates view (C-19.17).
   if (els.iconBar) {
-    els.iconBar.classList.toggle("iconbar--hidden", !isPhotos && !isRejects);
+    els.iconBar.classList.toggle(
+      "iconbar--hidden",
+      !isPhotos && !isRejects && !isDup
+    );
   }
   // Leaving the grid pages closes the slide-out panel (C-19.15).
-  if (!isPhotos && !isRejects) {
+  if (!isPhotos && !isRejects && !isDup) {
     els.sidePanel.classList.remove("sidepanel--open");
+    els.panelResizer.classList.remove("panel-resizer--on");
     if (sidePanelBtn) sidePanelBtn.classList.remove("iconbar__btn--active");
     sidePanelBtn = null;
     if (sideMode === "eraser") els.btnPanelEraser.classList.remove("iconbar__btn--active");
@@ -498,6 +612,9 @@ function switchView(name) {
   } else if (isRejects) {
     currentGrid = rejectGrid;
     currentScroll = els.viewRejects;
+  } else if (isDup) {
+    currentGrid = els.dupGrid;
+    currentScroll = els.viewDuplicates;
   }
   // Shared filters (colors/lens/focal/rating) are page-specific: switching
   // between Photos and Rejects clears them so one page's conditions never
@@ -511,7 +628,9 @@ function switchView(name) {
   // carrying the mode across pages made the first click on the other page
   // act as "cancel" instead of entering select mode.
   const leavingGrid =
-    (prevPhotosVisible && !isPhotos) || (prevRejectsVisible && !isRejects);
+    (prevPhotosVisible && !isPhotos) ||
+    (prevRejectsVisible && !isRejects) ||
+    (prevDupVisible && !isDup);
   if (leavingGrid && selectMode) setSelectMode(false);
   // Defer to next frame so the unhidden view has settled before measuring.
   if (isPhotos || isRejects) requestAnimationFrame(fillGridIfNeeded);
@@ -521,8 +640,11 @@ function switchView(name) {
 /// Slide the active-indicator bar to the currently active nav button (C-19.10).
 function updateSidebarIndicator() {
   const ind = document.getElementById("sidebar-indicator");
-  const active = document.querySelector(".sidebar__btn--active");
-  if (!ind || !active) return;
+  if (!ind) return;
+  // Rejects/duplicates have no sidebar button — the indicator stays on the
+  // photos entry (they are sub-views of the photo library, C-19.19).
+  const active =
+    document.querySelector(".sidebar__btn--active") || els.navPhotos;
   ind.style.transform = `translateY(${active.offsetTop + 6}px)`;
 }
 let lastGridView = "photos";
@@ -609,16 +731,45 @@ els.toggleFxGlass.addEventListener("click", () => {
   applyFx();
 });
 els.navPhotos.addEventListener("click", () => {
-  switchView("photos");
+  // Sidebar camera button: photos/rejects/duplicates are one camera page —
+  // clicking it while on one of them refreshes the CURRENT view only (C-19.19).
+  cameraClick();
   onboardingOnPhotosClicked();
-  // Re-fetch so cards show freshly computed tags (stale-tag fix).
+});
+// Top icon-bar button: ALWAYS returns to the normal photo view (C-19.19).
+els.btnGalleryView.addEventListener("click", () => {
+  switchView("photos");
   if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
     loadPhotos();
   }
 });
+
+/// Sidebar camera semantics (C-19.19): inside the camera family just refresh
+/// the current view; from other pages switch to photos.
+function cameraClick() {
+  if (!els.viewPhotos.classList.contains("view--hidden")) {
+    // Keep the current search results when a query is active (old behavior).
+    if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
+      loadPhotos();
+    }
+    return;
+  }
+  if (!els.viewRejects.classList.contains("view--hidden")) {
+    loadRejects();
+    return;
+  }
+  if (!els.viewDuplicates.classList.contains("view--hidden")) {
+    loadDuplicates();
+    return;
+  }
+  // Anywhere else: go to the photos page.
+  switchView("photos");
+  loadPhotos();
+}
 els.navFolders.addEventListener("click", () => { switchView("folders"); loadFolders(); });
 els.navTags.addEventListener("click", () => { switchView("tags"); renderTags(); });
-els.navRejects.addEventListener("click", () => {
+// Rejects moved from the sidebar to the icon bar (C-19.19).
+els.btnRejectsView.addEventListener("click", () => {
   switchView("rejects");
   loadRejects();
   // Re-render the condition labels in the CURRENT language — the initial
@@ -1184,25 +1335,30 @@ const selectedIds = new Set();
 function setSelectMode(on) {
   if (selectMode === on) return;
   selectMode = on;
-  // Both grid pages (photos/rejects) have their own select button — keep
-  // their labels and active state in sync (C-19.11).
+  // Grid pages have their own select button — keep labels/active in sync.
   const label = t(on ? "photos.selectDone" : "photos.selectMode");
   els.btnSelectMode.textContent = label;
   els.btnSelectMode.classList.toggle("searchbar__select--active", on);
   els.btnSelectModeRejects.textContent = label;
   els.btnSelectModeRejects.classList.toggle("searchbar__select--active", on);
+  if (els.btnDupSelect) {
+    els.btnDupSelect.textContent = label;
+    els.btnDupSelect.classList.toggle("searchbar__select--active", on);
+  }
   els.selectionBar.hidden = !on;
   els.selectionBarSecondary.hidden = !on;
   if (!on) {
     selectedIds.clear();
   }
   // Update already-rendered cards in place (no re-render: keeps scroll pos).
-  // BOTH grids: switchView may have already swapped currentGrid when this
-  // runs on a view change, and the other grid must not keep its "selecting"
-  // class or stale checkboxes (C-19.11).
-  for (const grid of [els.photoGrid, rejectGrid]) {
+  // ALL grids: switchView may have already swapped currentGrid when this
+  // runs on a view change, and the other grids must not keep their
+  // "selecting" class or stale checkboxes (C-19.11). The duplicates grid
+  // nests cards inside .dup-group rows, so query cards directly (C-19.17).
+  const applyGrid = (grid) => {
+    if (!grid) return;
     grid.classList.toggle("selecting", on);
-    for (const card of grid.children) {
+    for (const card of grid.querySelectorAll(".card")) {
       if (!card._photo) continue;
       card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
       const cb = card.querySelector(".card__check");
@@ -1211,7 +1367,10 @@ function setSelectMode(on) {
       const rj = card.querySelector(".card__reject");
       if (rj) rj.hidden = !(card._photo.colors || []).includes("reject");
     }
-  }
+  };
+  applyGrid(els.photoGrid);
+  applyGrid(rejectGrid);
+  applyGrid(els.dupGrid);
   updateSelectionBar();
 }
 
@@ -1234,8 +1393,10 @@ function updateSelectionBar() {
   els.btnSelectionRate.disabled = n === 0;
   els.btnSelectionExport.disabled = n === 0;
   els.btnSelectionDelete.disabled = n === 0;
-  // "Delete files" is a REJECTS-page action only (C-19.10).
-  els.btnSelectionDelete.hidden = els.viewRejects.classList.contains("view--hidden");
+  // "Delete files" shows on the REJECTS and DUPLICATES pages (C-19.19).
+  els.btnSelectionDelete.hidden =
+    els.viewRejects.classList.contains("view--hidden") &&
+    els.viewDuplicates.classList.contains("view--hidden");
 }
 
 /// Dialogs (add-tag / rate / confirm) must never overlap the floating
@@ -1315,6 +1476,14 @@ els.btnSelectionDelete.addEventListener("click", () => {
       // or it would cross-paint the full list into the rejects grid.
       for (const id of ids) selectedIds.delete(id);
       showSelectionHint(t("photos.deleted", { count: ids.length }));
+      if (!els.viewDuplicates.classList.contains("view--hidden")) {
+        // Duplicates: deleted members leave their groups — re-scan + render.
+        await loadRejects();
+        await loadPhotos();
+        await loadDuplicates();
+        updateSelectionBar();
+        return;
+      }
       await loadRejects();
       await loadPhotos();
       applySelectionToGrid(rejectGrid);
@@ -1353,6 +1522,29 @@ els.btnSelectionClearTags.addEventListener("click", () => {
 
 // Esc leaves select mode (after closing any open overlay first).
 document.addEventListener("keydown", (e) => {
+  // Ctrl/Cmd+A: enter select mode (if not already) and select EVERY photo
+  // in the current view (C-19.17). Text fields keep their native select-all.
+  if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || e.target.isContentEditable) return;
+    if (
+      els.viewPhotos.classList.contains("view--hidden") &&
+      els.viewRejects.classList.contains("view--hidden") &&
+      els.viewDuplicates.classList.contains("view--hidden")
+    )
+      return;
+    e.preventDefault();
+    if (!selectMode) setSelectMode(true);
+    selectedIds.clear();
+    for (const p of currentPhotos) selectedIds.add(p.id);
+    // Update already-rendered cards in place (no re-render: keeps scroll).
+    for (const card of currentGrid.children) {
+      if (!card._photo) continue;
+      card.classList.toggle("card--selected", selectedIds.has(card._photo.id));
+    }
+    updateSelectionBar();
+    return;
+  }
   if (e.key !== "Escape" || !selectMode) return;
   if (!els.tagpickOverlay.hidden) {
     els.tagpickOverlay.hidden = true;
@@ -1406,9 +1598,9 @@ function onGridMouseDown(e) {
     dragSel.box.style.width = R - L + "px";
     dragSel.box.style.height = B - T + "px";
     // Live highlight of intersecting cards (viewport coords — the box is
-    // fixed-positioned now, C-19.10).
-    for (const card of grid.children) {
-      if (!card._photo) continue;
+    // fixed-positioned now, C-19.10). Duplicates cards nest inside
+    // .dup-group rows — iterate them explicitly (C-19.19).
+    for (const card of gridCards(grid)) {
       const r = card.getBoundingClientRect();
       const hit = r.left < R && r.right > L && r.top < B && r.bottom > T;
       card.classList.toggle("card--sel-hover", hit);
@@ -1420,13 +1612,12 @@ function onGridMouseDown(e) {
     const d = dragSel;
     dragSel = null;
     box.remove();
-    for (const card of grid.children) {
+    for (const card of gridCards(grid)) {
       card.classList.remove("card--sel-hover");
     }
     if (!d || !d.moved) return; // plain click → card click toggles it
     const { L, T, R, B } = d.last;
-    for (const card of grid.children) {
-      if (!card._photo) continue;
+    for (const card of gridCards(grid)) {
       const r = card.getBoundingClientRect();
       const hit = r.left < R && r.right > L && r.top < B && r.bottom > T;
       if (hit && !selectedIds.has(card._photo.id)) {
@@ -1439,8 +1630,20 @@ function onGridMouseDown(e) {
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
 }
+/// The selectable cards of a grid — duplicates cards are nested inside
+/// .dup-group rows, everything else holds them directly (C-19.19).
+function gridCards(grid) {
+  if (!grid) return [];
+  const list = grid.classList.contains("dup-grid")
+    ? grid.querySelectorAll(".card")
+    : grid.children;
+  const out = [];
+  for (const c of list) if (c._photo) out.push(c);
+  return out;
+}
 els.photoGrid.addEventListener("mousedown", onGridMouseDown);
 rejectGrid.addEventListener("mousedown", onGridMouseDown);
+els.dupGrid.addEventListener("mousedown", onGridMouseDown);
 
 // "Add tag" for the selection: pick ONE existing tag, appended to all
 // selected photos (manual tags, existing tags untouched). The panel has a
@@ -1540,6 +1743,11 @@ let allPhotos = [];
 const activeRatings = new Set();
 
 function refreshCurrentView() {
+  // Duplicates view: groups re-filter in place, empty rows vanish (C-19.17).
+  if (!els.viewDuplicates.classList.contains("view--hidden")) {
+    renderDupGroups();
+    return;
+  }
   if (els.viewRejects.classList.contains("view--hidden")) {
     renderPhotos(applyFilters(allPhotos));
   } else {
@@ -1551,6 +1759,9 @@ function renderRatingButtons() {
   const on = activeRatings.size > 0;
   els.btnRatingFilter.classList.toggle("searchbar__filter--active", on);
   els.btnRatingFilterRejects.classList.toggle("searchbar__filter--active", on);
+  if (els.btnRatingFilterDup) {
+    els.btnRatingFilterDup.classList.toggle("searchbar__filter--active", on);
+  }
 }
 
 function renderRatingPanel() {
@@ -1738,7 +1949,7 @@ function renderFilterDots() {
       else activeColorFilters.add(c);
       renderFilterDots();
       updateFilterButton();
-      renderPhotos(applyFilters(allPhotos));
+      refreshCurrentView();
     });
     colorFilterDots.appendChild(dot);
   }
@@ -1781,7 +1992,7 @@ async function renderFilterLens() {
       renderFilterLens();
       updateFilterButton();
       const filtered = applyFilters(allPhotos);
-      renderPhotos(filtered);
+      refreshCurrentView();
       // Diagnostics (dev): if a lens filter kills everything while photos
       // DO carry lens data, report what the frontend actually sees.
       if (
@@ -1814,12 +2025,12 @@ function readFocalFilters() {
 filterFocalMin.addEventListener("input", () => {
   readFocalFilters();
   updateFilterButton();
-  renderPhotos(applyFilters(allPhotos));
+  refreshCurrentView();
 });
 filterFocalMax.addEventListener("input", () => {
   readFocalFilters();
   updateFilterButton();
-  renderPhotos(applyFilters(allPhotos));
+  refreshCurrentView();
 });
 
 btnColorFilter.addEventListener("click", async (e) => {
@@ -1842,7 +2053,7 @@ document.getElementById("btn-color-filter-clear").addEventListener("click", () =
   renderFilterLens();
   renderRatingButtons();
   updateFilterButton();
-  renderPhotos(applyFilters(allPhotos));
+  refreshCurrentView();
 });
 document.addEventListener("click", (e) => {
   if (
@@ -2570,6 +2781,16 @@ const preview = {
       const fullImg = new Image();
       fullImg.onload = () => {
         if (!this.els.overlay.hidden) this.els.img.src = fullSrc;
+        // Show the decoded resolution once the full image is available
+        // (C-19.19). meta is cleared at open(), so appending is safe.
+        const w = fullImg.naturalWidth;
+        const h = fullImg.naturalHeight;
+        if (w && h) {
+          const res = document.createElement("div");
+          res.className = "preview__res";
+          res.textContent = t("preview.resolution", { width: w, height: h });
+          this.els.meta.appendChild(res);
+        }
       };
       fullImg.src = fullSrc;
     }
@@ -2857,6 +3078,133 @@ async function runRejectSearch() {
 // Rating filtering now lives in the shared star-rating panel (C-19.14) —
 // opened from either the photos or the rejects "星数" button.
 
+// ---------------------------------------------------------------------------
+// Duplicates view (C-19.17): pixel-identical photo groups (backend hashes
+// generated thumbnails — deterministic encoder ⇒ identical pixels give
+// byte-identical thumbnails). One group per row; group cards wrap to the
+// next line when too wide. Cards have no star row / tag editor (shorter
+// height); multi-select still applies via the same selectedIds machinery.
+// ---------------------------------------------------------------------------
+let dupGroups = [];
+
+async function loadDuplicates() {
+  els.dupStatus.textContent = t("duplicates.analyzing");
+  try {
+    // Folder scope from the tree panel restricts the scan (C-19.17).
+    const scope = folderScope ? { folder_id: folderScope.rootId, path: folderScope.path } : null;
+    const groups = await invoke("find_duplicates", { scope });
+    dupGroups = groups || [];
+    // Flatten for Ctrl+A / multi-select bookkeeping (currentPhotos).
+    const flat = [];
+    for (const g of dupGroups) for (const d of g) flat.push(d);
+    currentPhotos = flat;
+    renderedCount = flat.length;
+    renderDupGroups();
+  } catch (e) {
+    console.error(e);
+    els.dupStatus.textContent = t("duplicates.error");
+  }
+}
+
+function renderDupGroups() {
+  const grid = els.dupGrid;
+  grid.textContent = "";
+  // Active filters (colors/lens/focal/rating) apply per photo — a group
+  // with nothing left after filtering is NOT rendered (C-19.17).
+  const shownGroups = [];
+  let shownPhotos = 0;
+  for (const group of dupGroups) {
+    const keep = group.filter((d) => applyFilters([d]).length > 0);
+    if (!keep.length) continue;
+    shownGroups.push(keep);
+    shownPhotos += keep.length;
+  }
+  els.dupStatus.textContent = shownGroups.length
+    ? t("duplicates.summary", { count: shownGroups.length })
+    : t("duplicates.none");
+  els.dupStatusbar.textContent = t("photos.status.count", { count: shownPhotos });
+  for (const keep of shownGroups) {
+    const row = document.createElement("div");
+    row.className = "dup-group";
+    for (const d of keep) row.appendChild(buildDupCard(d));
+    grid.appendChild(row);
+  }
+  pumpThumbs();
+}
+
+/// Duplicate card: thumbnail + filename + folder path (so the user can tell
+/// copies apart) — no stars, no tag editor; height reduced. Click = preview
+/// (or toggle in select mode).
+function buildDupCard(d) {
+  const card = document.createElement("div");
+  card.className = "card card--dup";
+  card._photo = d;
+  d._card = card;
+  const thumb = document.createElement("div");
+  thumb.className = "card__thumb";
+  const img = document.createElement("img");
+  img.alt = "";
+  thumb.appendChild(img);
+  thumb._img = img;
+  thumb._photo = d;
+  const check = document.createElement("span");
+  check.className = "card__check";
+  check.hidden = !selectMode;
+  thumb.appendChild(check);
+  card.appendChild(thumb);
+  const meta = document.createElement("div");
+  meta.className = "card__meta";
+  const nameEl = document.createElement("div");
+  nameEl.className = "card__meta-name";
+  nameEl.textContent = d.filename;
+  nameEl.title = d.path;
+  meta.appendChild(nameEl);
+  // Folder of this copy — short form: strip the filename, show the dir path.
+  // Paths may mix / and \ separators — take the LAST one of either (C-19.19).
+  const pathEl = document.createElement("div");
+  pathEl.className = "card__dup-path";
+  const idx = Math.max(d.path.lastIndexOf("/"), d.path.lastIndexOf("\\"));
+  pathEl.textContent = idx > 0 ? d.path.slice(0, idx) : d.path;
+  pathEl.title = d.path;
+  meta.appendChild(pathEl);
+  card.appendChild(meta);
+  thumbObserver.observe(thumb);
+  card.style.cursor = "pointer";
+  card.classList.toggle("card--selected", selectedIds.has(d.id));
+  card.addEventListener("click", () => {
+    if (selectMode) {
+      toggleSelect(d);
+      return;
+    }
+    try {
+      setThumb(img, d);
+    } catch (e) {
+      reportJs("click", String(e));
+    }
+    preview.open(d);
+  });
+  return card;
+}
+
+els.btnDupView.addEventListener("click", () => {
+  switchView("duplicates");
+  loadDuplicates();
+});
+els.btnDupSelect.addEventListener("click", () => setSelectMode(!selectMode));
+// Duplicates view: the filter/rating buttons open the SAME shared panels.
+els.btnColorFilterDup.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  colorFilterPanel.hidden = !colorFilterPanel.hidden;
+  if (!colorFilterPanel.hidden) {
+    positionPanel(colorFilterPanel, els.btnColorFilterDup);
+    await renderFilterLens();
+  }
+});
+els.btnRatingFilterDup.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleRatingPanel(els.btnRatingFilterDup);
+});
+
 // Both "Filter" buttons (photos + rejects) open the same global panel,
 // anchored under whichever button was clicked.
 els.btnColorFilterRejects.addEventListener("click", async (e) => {
@@ -3042,7 +3390,9 @@ els.btnSelectModeRejects.addEventListener("click", () => setSelectMode(!selectMo
 // ---------------------------------------------------------------------------
 // Toolbar / events
 // ---------------------------------------------------------------------------
-els.btnAdd.addEventListener("click", async () => {
+/// Shared folder-import flow: pick a directory, scan it (auto-tagging is
+/// queued by the backend), then refresh folder list + photos + tree cache.
+async function importFolderFlow() {
   try {
     const selected = await openDialog({ directory: true, multiple: false });
     if (!selected) return;
@@ -3059,6 +3409,13 @@ els.btnAdd.addEventListener("click", async () => {
     console.error(e);
     alert(String(e));
   }
+}
+
+els.btnAdd.addEventListener("click", importFolderFlow);
+// File menu > Import folder (C-19.17): same flow as the folders-page button.
+els.appMenuImport.addEventListener("click", () => {
+  els.appMenuPanel.hidden = true; // close the menu before the dialog opens
+  importFolderFlow();
 });
 
 els.btnRefresh.addEventListener("click", async () => {
@@ -3091,6 +3448,8 @@ listen("scan-complete", async () => {
   await loadPhotos();
   await loadRejects();
   loadFolders();
+  // New files may join/leave duplicate groups — refresh a visible dup view.
+  if (!els.viewDuplicates.classList.contains("view--hidden")) loadDuplicates();
 });
 
 // Language switch: re-render current view with new locale
@@ -3107,6 +3466,8 @@ onLanguageChange(() => {
   } else if (!els.viewRejects.classList.contains("view--hidden")) {
     renderPhotos(currentPhotos);
     renderRejectConds();
+  } else if (!els.viewDuplicates.classList.contains("view--hidden")) {
+    renderDupGroups();
   } else {
     renderSettings();
   }
@@ -3328,6 +3689,9 @@ function onboardingOnPhotosClicked() {
       indEl.style.transition = "";
     });
   }
+  // Photos is the DEFAULT view — light up the gallery button on boot
+  // (switchView is not called at startup; C-19.19).
+  if (els.btnGalleryView) els.btnGalleryView.classList.add("iconbar__btn--scoped");
   detectAndReportRenderer();
   // First-run onboarding (C-19.7): show only when the flag is missing —
   // the first release that ships the tour shows it to every install.

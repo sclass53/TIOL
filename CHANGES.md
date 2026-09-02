@@ -3,6 +3,49 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.20 · 2025-08 — 相机族视图统一（gallery 图标 / 废片重复迁移）/ 视图菜单 / 工具栏分组
+
+**需求**：① 废片、重复照片与照片同属「相机」界面：相机图标在三个视图下保持高亮（蓝条不消失），点击侧栏相机只刷新当前视图不切页；② iconbar 顶部新增 gallery-view（四宫格）图标回到正常视图（默认亮），三个视图图标相邻，分隔线下是工具；③ 顶部菜单新增「视图」（文件与帮助之间）：照片/废片/重复照片，当前项高亮，点击即切换；④ 工具栏按钮紧凑；⑤ 图标确认全部内联（icns 不上传 GitHub 不影响构建）；⑥ 预览显示分辨率；⑦ 重复卡片路径对混合斜杠（`e:/img\xx.jpg`）显示修正。
+
+**实现**：
+
+1. **相机族语义**：`switchView` 的 `navPhotos` 高亮条件 = `isPhotos || isRejects || isDup`；`updateSidebarIndicator` 无 active nav 时回退定位到照片按钮。侧栏相机 = `cameraClick()`（族内刷新当前视图，族外切回照片页）；iconbar gallery = 无条件回正常页（两者语义分离）。boot 补 `btnGalleryView` scoped 亮起（默认视图）。
+2. **iconbar 分组与紧凑**：顺序 gallery → 废片 → 重复 | `.iconbar__sep` 分隔线 | tree/tag/colors/eraser；按钮 30px/间距 2px/分隔线 margin 2px。废片入口自 sidebar 迁入 iconbar（`btnRejectsView`，侧栏导航由 5 减为 4，`els.navRejects` 置 null 并判空）。视图激活图标 `iconbar__btn--scoped` 蓝色（gallery/rejects/dups 三键随 `switchView` 同步）。
+3. **视图菜单**：`btn-app-menu-view`（菜单互斥关闭）；三项点击切换对应视图（photos=常规回页、rejects=加载+条件重渲+分析、dups=重扫）；菜单打开时当前视图项 `titlebar__menu-item--active`（accent 蓝+加粗）；i18n `menu.view`。
+4. **拖选/删除迁移**（C-19.19 延续）：`gridCards(grid)` 统一取卡（dup 卡片嵌 `.dup-group` 行内用 `querySelectorAll`）；`updateSelectionBar` 删除按钮在废片或重复页显示，delete handler 按视图重扫；dup 卡片高度 172px 含目录路径行（取最后 `/` 或 `\` 分隔符）。
+5. **预览分辨率**：full 图 `onload` 后用 `naturalWidth/Height` 追加「分辨率：W×H px」行（零后端改动），i18n `preview.resolution`。
+6. **图标内联确认**：sidebar/iconbar 全部内联 SVG；`src/` 无 `icns/` 引用；标题栏图标用仓库内 `src/icon.png`——icns 目录不入库不影响 CI 构建与图标显示。
+7. **侧栏宽度可拖拽（跟进）**：把手做成 sidepanel 与 main 之间的**独立 flex 拖拽条**（`.panel-resizer`，面板打开时显示、hover 变蓝）——首版把手放在面板（overflow 容器）内部悬出不可点，已废弃；拖动实时改 `--sp-w` 变量（120–560px），拖动中禁过渡（`.sidepanel--resizing`），宽度 localStorage 持久化（`tiol-sidepanel-w`），开关面板/切页时同步显示隐藏。
+8. **死代码清理（文档/检查）**：`pagePhotoSub`（未定义引用）、`get_all_file_briefs`（被 `get_all_files_full` 取代）、`DupFile` 序列化结构（改返 FileRecord）、启动填充诊断日志（fill/watchdog reportJs）、`sidepanel__resize`/`sideResize`（拖拽把手旧方案）、`galleryClick` 旧名、`bannerSlide` keyframes 等均无残留；i18n 181 keys 双语对齐、messages.js 同步、`getElementById` 145 个引用与 HTML 一一对应（唯一 missing 的 `onboarding-root` 为引导流程动态创建，非死代码）；cargo 无代码级 warning（仅 exFAT 硬链接环境提示）。
+
+## C-19.19 · 2025-08 — 废片入口移入工具栏 / 重复视图工具化（蓝色提醒 + 拖选 + 删除 + 树联动刷新）
+
+**需求**：① 重复视图是"工具视图"，进入后 copy 图标变蓝提醒（同树图标 scoped 样式）；② 在重复视图里点文件夹树选文件夹不刷新（需重新点重复图标）——应自动刷新；③ 重复视图多选支持拖选；④ 重复视图多选要有废片页的「删除照片」；⑤ 废片入口从左侧 sidebar 移到 iconbar（copy 图标下方，全部工具集中一处）——注意动画与逻辑适配；⑥ 更新 todo。
+
+**实现**：
+
+1. **激活提醒**：`switchView` 里 `btnDupView`/`btnRejectsView` 按当前视图 toggle `iconbar__btn--scoped`（accent 蓝，声明在 `--active` 之后覆盖）——用户在重复/废片页时工具栏图标呈蓝。
+2. **树联动刷新**：树面板「全部」与节点点击后，若 `view-duplicates` 可见则 `loadDuplicates()`（作用域变化即时生效）；`scan-complete` 后同样刷新可见的重复视图；语言切换分支补 `renderDupGroups()`。
+3. **拖选**：`onGridMouseDown` 的卡片遍历抽象为 `gridCards(grid)`——普通网格取 `children`，`dup-grid` 用 `querySelectorAll(".card")`（卡片嵌在 `.dup-group` 行内，原遍历会漏）；`dupGrid` 绑定 `mousedown`。live-highlight / 落点选中 / 清除共用同一辅助。
+4. **删除照片**：`updateSelectionBar` 的「删除文件」显示条件由「仅废片页」改为「废片页或重复页」；delete handler 在重复视图走 `loadDuplicates()` 重扫重渲（组内删光则该行消失）。
+5. **废片入口迁移**：sidebar 移除 nav-rejects（五按钮 → 四），iconbar 底部新增 trash 按钮（copy 下方，复用 trash-alt.svg）；原 nav click 逻辑原样搬到 `btnRejectsView`（switchView + loadRejects + renderRejectConds + ensureRejectAnalysis）。`els.navRejects` 置 null，switchView 对其判空；sidebar 指示条在无 nav 激活（rejects/duplicates 页）时 `opacity:0` 隐藏（`updateSidebarIndicator`）。
+6. **i18n**：无新增 key（trash 复用 `nav.rejects` title）。
+
+## C-19.18 · 2025-08 — 重复照片视图（像素级检测）
+
+**需求**：iconbar 新增 copy 图标进入「重复照片」视图：原理 = 直接对比图片像素，一模一样者为重复；一行一组连续照片（过多溢出到下一行）；卡片不能打星/编辑标签（高度相应缩小）；多选照常；顶部保留筛选/星数/多选按钮；文件夹树选中时只在该文件夹内检测；筛选后按行显示、无照片的行隐藏；卡片底部显示路径便于抉择。
+
+**实现**：
+
+1. **后端 `find_duplicates(scope)`**：遍历**全库**（新增 `db.get_all_files_full`，`SELECT FILE_COLS` 无 LIMIT，返回完整 FileRecord——含 folder_id/colors/rating/lens 等，供筛选与路径展示）→ 对每张图的**缩略图文件做 SHA-256**。技巧：缩略图编码确定性 ⇒ 像素相同的图片（含重编码/不同格式/不同文件大小）缩略图字节必然一致，读取小文件毫秒级完成；缺失缩略图现场生成。`scope`（`{folder_id, path}`）镜像树面板的 `folderScope`——只对作用域内文件分组比较。
+2. **视图**：新 `view-duplicates` section（滚动容器机制同 photos/rejects，`currentGrid=dupGrid`）；数据扁平后写入 `currentPhotos` 使 Ctrl+A/多选簿记照常。顶部 = 状态 bubble + actions bubble（筛选/星数/多选）——筛选/星数打开**共享面板**，变更走 `refreshCurrentView()`（新增 dup 分支：`renderDupGroups`）；星数按钮高亮同步。
+3. **分组布局**：每组一个 `.dup-group`（flex-wrap 行），组间 `margin-top` 分隔；`renderDupGroups` 先对组内逐张 `applyFilters`（颜色/镜头/焦段/星数），**整组过滤光则整行不渲染**。
+4. **瘦身卡片**：`.card--dup`——无星行/无编辑按钮，高度 172px；meta 两行：文件名 + **目录路径**（去掉文件名的 path，短格式 + title 全文），选重复副本时一眼可辨。
+5. **多选**：视图自带「多选」按钮走全局 `setSelectMode`（按钮文本/高亮、`selection-bar` 复用）；`setSelectMode` 的卡片遍历改为 `querySelectorAll(".card")`（dup 卡片嵌在 `.dup-group` 内，原 `children` 遍历会漏）；Ctrl+A 在 dup 页同样全选。离开视图自动退出多选（switchView `leavingGrid` 纳入 duplicates）。
+6. **刷新**：每次进入视图重新 `find_duplicates`（毫秒级）；文件夹树选定新文件夹后进入 = 自动作用域过滤（`loadDuplicates` 传 `folderScope`）。
+7. **其他 handler 统一**：色点/镜头/焦段/清除筛选的渲染调用改为 `refreshCurrentView()`——photos/rejects/duplicates 三视图行为一致。
+8. **i18n**：`iconbar.duplicates` + `duplicates.analyzing/summary/none/error`。
+
 ## C-19.17 · 2025-08 — 文件夹树面板视觉优化（选中背景 margin / 三角位置 / 省略号 / 叶子照片数 pill）
 
 **需求**：① 选中项背景顶到面板两边，加左右 margin；② 折叠三角形位置略偏下；③ 过长文件名要省略号；④ 叶子文件夹右侧用 pill 显示照片数量。
@@ -28,6 +71,25 @@
 1. **`markTreeDirty()`**：置 `treeCache = null`；若树面板当前打开（`sideMode === "tree"`）则立即 `renderSidePanel("tree")` 原地刷新（展开状态由 `treeExpanded` 保留，与点击节点后的重建路径相同）。
 2. **失效点**：① `add_folder` 成功后；② `remove_folder` 成功后；③ `scan-complete` 事件（扫描可能发现缓存建立后才出现的子目录）。
 3. **代价**：失效后下次打开面板会重新 `get_folder_tree`（一次目录遍历）；打开面板为低频操作，可接受。`treeCache` 原注释「per session」相应更新。
+
+## C-19.15 · 2025-08 — 帮助菜单 / 图标栏 / 侧栏快捷面板 / 懒标签 / 橡皮擦 / 全局右键禁用 / Ctrl+A / 文件菜单导入
+
+**需求**（多项小需求合并为一次大迭代）：① 顶部菜单新增「帮助 → 查看 GitHub 页面」；② 左侧新增窄图标栏（目录树/标签/多彩颜色图标），点击顺滑弹出左侧面板（挤压主区成双栏）；③ 面板内容：tag 单选点击即打、颜色单选点击即上色（含废片）、文件夹树（默认折叠、三角形展开、仅显示目录）；④ 图标栏只在照片/废片页出现；⑤ eraser 橡皮擦模式（点击清除全部标签与颜色，不弹面板）；⑥ Tags 页标签可勾选，AI Tagging 只处理勾选项；⑦ 全局禁用浏览器右键菜单（仅保留卡片自定义菜单）；⑧ Ctrl+A 全选当前视图；⑨ 文件菜单「导入文件夹」。
+
+**实现**：
+
+1. **帮助菜单**：标题栏「帮助 → 查看 GitHub 页面」经 `shell.open` 打开仓库 `sclass53/TIOL-Image-Manager`。
+2. **图标栏（iconbar，36→30px）**：sidebar 与主区之间，folder-tree/tag/彩色环（conic-gradient）/eraser/copy 内联 SVG；**仅网格页显示**（`switchView` toggle `iconbar--hidden`，宽度+透明度过渡）；按钮高亮表示激活模式/面板。
+3. **侧栏（sidepanel）**：面板在 main **左侧**滑出（width 过渡挤压主区）；`toggleSidePanel` 语义 = 点新图标**切换**面板（高亮转移）、点同一图标关闭；tags/colors/tree 各模式状态独立。
+4. **懒打标（不重渲染）**：tag/颜色点击走 `updateCardInPlace`——就地更新标签文字行（必须 append 进 `.card__meta` 内，卡片固定高度裁剪外部元素）、色点、reject 徽章；照片因新状态掉出当前视图（废片条件/筛选）时**就地移除卡片**。颜色 toggle 语义：`toggle_color_tag` 返回操作后是否携带该色（all=true → 添加）。
+5. **文件夹树**：后端 `get_folder_tree`（递归列子目录、跳过文件/隐藏目录、深度≤12、每节点带 root_id 与 count）；前端全部节点默认折叠，三角形 `▶ rotate(90deg)` 展开（**就地 toggle kids 容器，避免重建面板丢失过渡起点**）；选中节点 → `folderScope = {rootId, path}`：照片按根目录拉取 + **path 前缀过滤**（子目录同样可筛），搜索/筛选基于此作用域；树数据 session 缓存 + `markTreeDirty()` 失效。
+6. **橡皮擦**：不弹面板；点击照片 → `clear_tags_from_files`（tags+colors）懒清除。
+7. **AI Tagging 勾选**：Tags 页每标签勾选框（`selectedTagIds`）；`run_ai_tagging(tag_ids)` 后端把任务限定到勾选标签名（AITask.tag_names 过滤匹配向量）；未勾选提示。
+8. **右键禁用**：全局 `contextmenu` preventDefault（输入框的复制粘贴菜单也禁用）；卡片右键仍弹自定义菜单。
+9. **Ctrl+A**：任意视图进入多选并全选 `currentPhotos`（输入框除外，macOS Cmd+A）。
+10. **文件菜单导入**：`importFolderFlow()` 与目录页按钮共用（dialog → `add_folder` → `markFoldersDirty`/`markTreeDirty` → 刷新列表）。
+11. **i18n**：`menu.help/viewGithub/import`、`iconbar.*`、`sidepanel.*`、`tags.selectFirst` 等。
+12. **动画开关扩展**：三角形旋转、侧栏滑动、图标栏与主 sidebar 的 width 过渡统一受「特效 > 动画」控制（`fx-anim-off`）。
 
 ## C-19.14 · 2025-08 — 搜索栏 bubble 化 + 星数多选筛选 + 全屏按钮 SVG
 

@@ -370,6 +370,20 @@ impl Db {
         Ok(rows)
     }
 
+    /// Every file WITHOUT the get_photos LIMIT — the duplicate scan must
+    /// consider the whole library (C-19.17). Full FileRecord rows so the
+    /// frontend can filter groups by color/rating and show paths.
+    pub fn get_all_files_full(&self) -> Result<Vec<FileRecord>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(&format!("SELECT {FILE_COLS} FROM files ORDER BY id"))
+            .map_err(|e| e.to_string())?;
+        let mapped = stmt.query_map([], map_file).map_err(|e| e.to_string())?;
+        mapped
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileRecord>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let rec = conn
