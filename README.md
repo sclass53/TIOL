@@ -7,6 +7,10 @@ English | [中文](README.zh.md)
 
 Your privacy-first, local-first photo manager. Automatically tags photos. Built-in fast, intelligent searching. 
 
+[![Version](https://img.shields.io/badge/dynamic/json?url=https://tiol.netlify.app/version.json&label=version&query=$.version&color=blue&style=flat-square)](https://tiol.netlify.app/releases/latest)
+[![License](https://img.shields.io/badge/license-GPLv3-blue?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0)
+[![Downloads](https://img.shields.io/badge/downloads-500+-brightgreen?style=flat-square)](https://tiol.netlify.app/releases)
+
 ![示例图片](examples/example.jpg)
 
 Supports **MacOS**, **Windows**, and **Linux**. 

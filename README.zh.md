@@ -7,6 +7,10 @@
 
 隐私优先，本地优先的照片管理应用。自动为您的摄影作品打标签。支持快速，智能的搜索。
 
+[![版本](https://img.shields.io/badge/dynamic/json?url=https://tiol.netlify.app/version.json&label=版本&query=$.version&color=blue&style=flat-square)](https://tiol.netlify.app/releases/latest)
+[![许可证](https://img.shields.io/badge/license-GPLv3-blue?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0)
+[![下载量](https://img.shields.io/badge/downloads-500+-brightgreen?style=flat-square)](https://tiol.netlify.app/releases)
+
 ![示例图片](examples/example.jpg)
 
 支持 **MacOS**, **Windows**, 和**Linux**。
