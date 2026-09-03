@@ -2958,10 +2958,35 @@ els.searchInput.addEventListener("input", scheduleSearch);
 els.semanticSearchInput.addEventListener("input", scheduleSearch);
 els.searchMode.addEventListener("change", scheduleSearch);
 
+// Semantic search while the AI engine is still booting: show "loading" and
+// retry the query every 2s (max 20 attempts) until the backend answers
+// (C-19.20). Cleared by the next runSearch.
+let semanticRetryTimer = null;
+let semanticRetryCount = 0;
+function scheduleSemanticRetry() {
+  clearTimeout(semanticRetryTimer);
+  semanticRetryTimer = setTimeout(() => {
+    if (!els.semanticSearchInput.value.trim()) {
+      semanticRetryCount = 0;
+      return;
+    }
+    if (semanticRetryCount++ >= 20) {
+      els.photoStatus.textContent = t("search.semantic.unavailable");
+      return;
+    }
+    runSearch();
+  }, 2000);
+}
+
 async function runSearch() {
-  const q2 = els.semanticSearchInput.value.trim();
+  // Lowercase normalization for the semantic/tag query — embeddings are
+  // case-sensitive, so queries must be canonicalized before encoding (C-19.20).
+  const q2 = els.semanticSearchInput.value.trim().toLowerCase();
   const qName = els.searchInput.value.trim();
   const mode = els.searchMode.value;
+  // Any run supersedes a pending not-ready retry (C-19.20).
+  clearTimeout(semanticRetryTimer);
+  semanticRetryCount = 0;
   // Folder scope (C-19.15): when a folder/subfolder is selected in the tree
   // panel, search results are restricted to it (root fetch + path prefix).
   const scoped = (res) => {
@@ -2981,9 +3006,15 @@ async function runSearch() {
       renderPhotos([], { scrollTop: 0 });
       const msg = String(e);
       if (mode === "semantic") {
-        els.photoStatus.textContent = msg.includes("not ready")
-          ? t("search.semantic.unavailable")
-          : t("search.semantic.error");
+        if (msg.includes("not ready")) {
+          // The engine is still booting (model lock/load can take ~10s) —
+          // tell the user and AUTO-RETRY this query until it answers
+          // instead of leaving a stale "no results" (C-19.20).
+          els.photoStatus.textContent = t("search.semantic.loading");
+          scheduleSemanticRetry();
+        } else {
+          els.photoStatus.textContent = t("search.semantic.error");
+        }
       } else {
         els.photoStatus.textContent = t("search.tag.error");
       }
@@ -3058,7 +3089,8 @@ els.rejectSearchInput.addEventListener("input", () => {
 });
 
 async function runRejectSearch() {
-  const q = els.rejectSearchInput.value.trim();
+  // Lowercase normalization, same as the photos semantic search (C-19.20).
+  const q = els.rejectSearchInput.value.trim().toLowerCase();
   if (!q) {
     loadRejects();
     return;

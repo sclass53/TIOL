@@ -29,7 +29,8 @@ export const MESSAGES = {
       "semantic": {
         "placeholder": "用一句话描述要找的照片… 例如：一张日落的照片",
         "error": "语义搜索失败",
-        "unavailable": "AI 尚未就绪，无法语义搜索"
+        "unavailable": "AI 尚未就绪，无法语义搜索",
+        "loading": "语义搜索引擎加载中，正在重试…"
       },
       "tag": {
         "error": "标签搜索失败"
@@ -270,7 +271,8 @@ export const MESSAGES = {
       "semantic": {
         "placeholder": "Describe the photo you're looking for… e.g. a sunset",
         "error": "Semantic search failed",
-        "unavailable": "AI not ready for semantic search"
+        "unavailable": "AI not ready for semantic search",
+        "loading": "Semantic engine loading, retrying…"
       },
       "tag": {
         "error": "Tag search failed"

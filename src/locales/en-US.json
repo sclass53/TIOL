@@ -26,7 +26,8 @@
     "semantic": {
       "placeholder": "Describe the photo you're looking for… e.g. a sunset",
       "error": "Semantic search failed",
-      "unavailable": "AI not ready for semantic search"
+      "unavailable": "AI not ready for semantic search",
+      "loading": "Semantic engine loading, retrying…"
     },
     "tag": {
       "error": "Tag search failed"
