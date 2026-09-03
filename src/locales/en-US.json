@@ -115,6 +115,7 @@
     "view": "View",
     "help": "Help",
     "viewGithub": "View GitHub page",
+    "hideDupRaw": "Hide duplicate RAW",
     "reveal": "Show in File Explorer",
     "wallpaper": "Set as wallpaper",
     "wallpaperSet": "Wallpaper set"

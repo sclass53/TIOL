@@ -3,6 +3,47 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.23 · 2025-08 — 同名 RAW+JPEG 只索引 JPEG / 搜索结果补显 RAW 孪生 / 索引提速 / 「隐藏重复 RAW」
+
+**需求**：① 同一照片（同名）RAW 与 JPEG 并存时只 index JPEG（减少索引量——RAW 解码预览是全库最慢路径）；② 搜索时两个仍都显示（勾选「隐藏重复 RAW」才隐藏）；③ index 太慢要查因提速；④ 菜单文案「不显示重复 RAW」改「隐藏重复 RAW」。配对范围用户确认：**全库同名配对**（RAW/JPEG 常分目录存放）。
+
+**实现**：
+
+1. **索引跳过 RAW 孪生**（AI 队列层）：`db::find_jpeg_twin(file_id)`——任意目录、同 stem（NOCASE）、jpg/jpeg 扩展的其它文件。`queue::process_one` 开头：RAW 且有 JPEG 孪生 → 直接跳过（不嵌入、不改 `ai_processed`——JPEG 后来消失时 RAW 下次启动自动恢复待索引，自愈）。手动「AI Tagging」对跳过 RAW 改为**复制孪生 JPEG 的 AI 标签**（source=1，滤 unknown，不动手动标签）——RAW 无需自身嵌入也能收敛出标签。
+2. **搜索结果补显 RAW 孪生**：`db::raw_twins_of(hits)`（全库 filename 一次扫描内存分组）→ `semantic_search` 命中后把同 stem RAW 附加到结果尾部，**携带 JPEG 的 score**（顺序/徽章一致）——未勾选「隐藏重复 RAW」时一对两个都显示；勾选时前端既有 `filterDupRaws` 原样剔除（两处各司其职，前端零改动）。tag/文件名搜索不扩展（RAW 无标签/名字本就各自命中）。
+3. **索引提速**（两处）：
+   - **缩略图缓存直嵌**：`engine::embed_dynamic(img)`（拆自 embed_image：解码与归一化分离）；`queue::embed_task_image`——文件缩略图（key = hash(display path, mtime)，与前端/prewarm 同键）存在时从 360px 小图解码嵌入（毫秒级），miss/损坏回退全尺寸解码（行为不变）。
+   - **去掉每任务 100ms 固定空等**：原「空闲节流」对每个任务无条件 sleep——690 文件纯延迟 ~69s；改为仅队列空时 sleep（防 busy-spin，不拖累吞吐）。
+4. **文案**：`menu.hideDupRaw` zh→「隐藏重复 RAW」、en→「Hide duplicate RAW」（菜单/消息同步，i18n 183 keys 全绿）。
+
+## C-19.22 · 2025-08 — 启动卡死修复（TDZ）/ RAW 预览解码 panic 防护 / 语义搜索体验修正
+
+**需求（跟进 19.21 后测试）**：① 启动后按钮可点但逻辑全死（疑似死锁/卡死）；② RAW 内嵌预览解码大量线程 panic（`copy_from_slice` 长度不匹配）刷屏；③ 语义搜索输入区分大小写；④ 模型加载完成前的搜索显示「无结果」；⑤ gallery 图标在废片/重复页点击须回正常视图。
+
+**实现**：
+
+1. **启动卡死（根因 TDZ）**：`syncHideRawCheck()` 在模块顶层被调用，但其读取的 `hideDupRaw` 由更靠后的 `let` 声明（模块级读 localStorage 初始化）→ TDZ `ReferenceError` 中止整个模块初始化，**后续所有事件绑定全部丢失**（症状 = 按钮样式正常但逻辑全死）。修复：`hideDupRaw` 状态块上移到菜单处理器与 `syncHideRawCheck()` 调用之前。
+2. **RAW 预览解码 panic 防护**（C-19.21 RAW 扫描的隐患）：`image` 0.24.9 的 JPEG 解码器对部分 RAW 全尺寸预览段（索尼 ARW 等）不返回 `Err` 而是直接 panic（`copy_from_slice`：源 393216 ≠ 目标 196608），未捕获时 panic 刷屏并干扰 worker。修复：候选段解码包 `std::panic::catch_unwind`，且调用期间临时静音 panic hook——坏段仅被跳过（自动回退到更小的内嵌缩略图），同文件其它候选与整个任务不受影响，日志恢复干净。
+3. **语义搜索小写归一化**：嵌入模型区分大小写，照片/废片搜索框提交前统一 `toLowerCase()`。
+4. **引擎未就绪自动重试**：后端答「引擎未就绪」时前端显示 loading 文案并每 2s 自动重试（上限 20 次），引擎加载完成后自动出结果，无需手动重搜。
+5. **gallery 图标语义**：iconbar gallery 图标点击一律 `switchView("photos")`——废片/重复页同样能一键回正常视图（侧栏相机图标负责族内刷新，分工见 C-19.20）。
+
+## C-19.21 · 2025-08 — 切页搜索失效修复 / RAW 支持 / 「不显示重复 RAW」视图筛选
+
+**需求**：① 主页切到别的页再切回，搜索失效（须改动字符串再回车才能重搜）；② 支持各类相机 RAW；③ 「视图」菜单分割线下新增勾选「不显示重复 RAW」：视图内同名 JPEG 与 RAW 并存时只显示 JPEG，对三个视图有效。
+
+**实现**：
+
+1. **切页搜索失效**：`cameraClick()` 从其他页回照片页时无条件 `loadPhotos()`，全量列表覆盖搜索结果（输入框还有字但结果没了）。新增 `hasActiveQuery()` / `refreshPhotosView()`——有查询时改跑 `runSearch()` 恢复结果；`btnGalleryView`、`appMenuViewGallery` 同步接入。废片页同类问题用 `refreshRejectsView()`（有废片搜索词时跑 `runRejectSearch`）。
+2. **RAW 支持**：
+   - `utils::RAW_EXTS`（nef/nrw/pef/ptx/arw/srf/sr2/crw/cr2/cr3/dng/raf/orf/rw2/raw/srw）+ `is_raw_ext/is_raw_path`；scanner `is_allowed` 并入该表。
+   - `utils::decode_image(path)`：先 `image::open`，失败且是 RAW 时字节扫描内嵌 JPEG 预览（SOI FF D8 FF → 下一个 EOI FF D9 为一段，逐段解码取面积最大者；误报段解码失败即跳过，跨品牌通用，免逐格式解析 IFD）。缩略图 `generate_thumbnail` 与 AI `preprocess_image` 统一走它——RAW 获得缩略图、嵌入与语义搜索（内容=预览 JPEG）。
+   - EXIF：kamadak-exif 对 TIFF 系 RAW（NEF/ARW/CR2/DNG…）可直接读镜头/焦距；CRW 等非 TIFF 容器优雅降级为无 EXIF（既有行为）。
+3. **不显示重复 RAW**：
+   - 视图菜单分割线（`.titlebar__menu-sep`）+ 勾选项（`.titlebar__menu-check`，✓ 用 accent 色），状态存 `localStorage("tiol-hide-dup-raw")`。
+   - 纯前端筛选 `filterDupRaws(list)`：按 `路径目录/去扩展名`（归一化斜杠+小写，路径是 display 混合斜杠）分组，组内同时有 JPEG（jpg/jpeg）与 RAW 侧车时隐藏 RAW 的 id；`loadPhotos` / `runSearch scoped()` / `loadRejects` / `runRejectSearch` / `loadDuplicates`（组内过滤，空组丢弃）五处接入，搜索结果同样生效。切换勾选只重渲当前可见视图，其余视图下次进入自然生效。
+   - i18n `menu.hideDupRaw`（中英）。
+
 ## C-19.20 · 2025-08 — 相机族视图统一（gallery 图标 / 废片重复迁移）/ 视图菜单 / 工具栏分组
 
 **需求**：① 废片、重复照片与照片同属「相机」界面：相机图标在三个视图下保持高亮（蓝条不消失），点击侧栏相机只刷新当前视图不切页；② iconbar 顶部新增 gallery-view（四宫格）图标回到正常视图（默认亮），三个视图图标相邻，分隔线下是工具；③ 顶部菜单新增「视图」（文件与帮助之间）：照片/废片/重复照片，当前项高亮，点击即切换；④ 工具栏按钮紧凑；⑤ 图标确认全部内联（icns 不上传 GitHub 不影响构建）；⑥ 预览显示分辨率；⑦ 重复卡片路径对混合斜杠（`e:/img\xx.jpg`）显示修正。

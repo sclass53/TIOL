@@ -38,5 +38,39 @@ pub fn semantic_search(db: &Db, engine: &AIEngine, query: &str) -> Result<Vec<Fi
     for (file, (_, score)) in files.iter_mut().zip(scored.iter()) {
         file.score = Some(*score);
     }
+    // C-19.23: attach same-stem RAW twins (any folder). RAW twins are never
+    // embedded, so they can't be semantic hits on their own — but the user
+    // expects BOTH files of a RAW+JPEG pair to show up in search results;
+    // the frontend "hide duplicate RAW" toggle filters them back out. The
+    // twin carries its JPEG's score so ordering/UI stay coherent.
+    if !files.is_empty() {
+        let twins = db.raw_twins_of(&files).map_err(AppError::Db)?;
+        if !twins.is_empty() {
+            let mut score_by_stem: std::collections::HashMap<String, f32> =
+                std::collections::HashMap::new();
+            for f in &files {
+                if let Some(stem) = std::path::Path::new(&f.path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                {
+                    score_by_stem
+                        .entry(stem.to_lowercase())
+                        .or_insert(f.score.unwrap_or(0.0));
+                }
+            }
+            let mut twins = twins;
+            for t in twins.iter_mut() {
+                if let Some(stem) = std::path::Path::new(&t.path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                {
+                    if let Some(s) = score_by_stem.get(&stem.to_lowercase()) {
+                        t.score = Some(*s);
+                    }
+                }
+            }
+            files.extend(twins);
+        }
+    }
     Ok(files)
 }

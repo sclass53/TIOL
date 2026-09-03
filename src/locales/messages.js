@@ -118,6 +118,7 @@ export const MESSAGES = {
       "view": "视图",
       "help": "帮助",
       "viewGithub": "查看 GitHub 页面",
+      "hideDupRaw": "隐藏重复 RAW",
       "reveal": "在文件资源管理器中显示",
       "wallpaper": "设为壁纸",
       "wallpaperSet": "壁纸已设置"
@@ -360,6 +361,7 @@ export const MESSAGES = {
       "view": "View",
       "help": "Help",
       "viewGithub": "View GitHub page",
+      "hideDupRaw": "Hide duplicate RAW",
       "reveal": "Show in File Explorer",
       "wallpaper": "Set as wallpaper",
       "wallpaperSet": "Wallpaper set"

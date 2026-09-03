@@ -50,6 +50,7 @@ const els = {
   appMenuViewGallery: document.getElementById("app-menu-view-gallery"),
   appMenuViewRejects: document.getElementById("app-menu-view-rejects"),
   appMenuViewDups: document.getElementById("app-menu-view-dups"),
+  appMenuViewHideRaw: document.getElementById("app-menu-view-hide-raw"),
   btnAppMenuHelp: document.getElementById("btn-app-menu-help"),
   appMenuHelpPanel: document.getElementById("app-menu-help-panel"),
   appMenuGithub: document.getElementById("app-menu-github"),
@@ -214,12 +215,12 @@ els.appMenuQuit.addEventListener("click", () => {
 els.appMenuViewGallery.addEventListener("click", () => {
   els.appMenuViewPanel.hidden = true;
   switchView("photos");
-  if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) loadPhotos();
+  refreshPhotosView();
 });
 els.appMenuViewRejects.addEventListener("click", () => {
   els.appMenuViewPanel.hidden = true;
   switchView("rejects");
-  loadRejects();
+  refreshRejectsView();
   renderRejectConds();
   ensureRejectAnalysis();
 });
@@ -228,6 +229,30 @@ els.appMenuViewDups.addEventListener("click", () => {
   switchView("duplicates");
   loadDuplicates();
 });
+// "Hide duplicate RAWs" STATE — MUST be declared before the top-level
+// syncHideRawCheck() call below (a later `let` would hit the TDZ and abort
+// the whole module, leaving every button dead; C-19.21).
+let hideDupRaw = false;
+try {
+  hideDupRaw = localStorage.getItem("tiol-hide-dup-raw") === "1";
+} catch (e) { /* private mode */ }
+// "Hide duplicate RAWs" checkbox (C-19.21): persisted, re-renders whichever
+// grid view is visible — the others re-filter on their next entry.
+els.appMenuViewHideRaw.addEventListener("click", () => {
+  hideDupRaw = !hideDupRaw;
+  try {
+    localStorage.setItem("tiol-hide-dup-raw", hideDupRaw ? "1" : "0");
+  } catch (e) { /* ignore */ }
+  syncHideRawCheck();
+  if (!els.viewPhotos.classList.contains("view--hidden")) {
+    refreshPhotosView();
+  } else if (!els.viewRejects.classList.contains("view--hidden")) {
+    refreshRejectsView();
+  } else if (!els.viewDuplicates.classList.contains("view--hidden")) {
+    loadDuplicates();
+  }
+});
+syncHideRawCheck();
 // Kill the WebView2 native context menu everywhere — the app's own card
 // context menu (ctx-menu) handles right-clicks on cards; everywhere else a
 // right-click does nothing, so the app never looks like a web page (C-19.15).
@@ -270,6 +295,69 @@ let folderScope = null;
 // then (C-19.17).
 function syncTreeIcon() {
   els.btnPanelTree.classList.toggle("iconbar__btn--scoped", folderScope != null);
+}
+
+// ---------------------------------------------------------------------------
+// "Hide duplicate RAWs" view filter (C-19.21): when the same folder holds a
+// JPEG and same-named RAW sidecar(s) (DSC_1234.JPG + DSC_1234.NEF/ARW/...),
+// only the JPEG is shown. Pure frontend filter — applies to ALL grids
+// (photos / rejects / duplicates / search results).
+// The `hideDupRaw` STATE itself lives near the menu handlers above (the
+// module calls syncHideRawCheck() at the top level, before this block).
+// ---------------------------------------------------------------------------
+
+const JPEG_EXTS = new Set(["jpg", "jpeg"]);
+const RAWSIDE_EXTS = new Set([
+  "nef", "nrw", "pef", "ptx", "arw", "srf", "sr2", "crw", "cr2", "cr3",
+  "dng", "raf", "orf", "rw2", "raw", "srw",
+]);
+
+function syncHideRawCheck() {
+  const mark = els.appMenuViewHideRaw.querySelector(".titlebar__menu-checkmark");
+  if (mark) mark.hidden = !hideDupRaw;
+}
+
+/// Split a record path into { dir, base (no ext), ext } — paths mix / and \
+/// and case, so normalize first (C-19.21).
+function rawPairKey(p) {
+  const norm = p.path.replace(/\\/g, "/").toLowerCase();
+  const cut = norm.lastIndexOf("/");
+  const name = cut >= 0 ? norm.slice(cut + 1) : norm;
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return null;
+  return {
+    dir: cut >= 0 ? norm.slice(0, cut) : "",
+    base: name.slice(0, dot),
+    ext: name.slice(dot + 1),
+  };
+}
+
+/// IDs of RAW files that have a same-named JPEG in the same folder.
+function dupRawHideSet(list) {
+  const hide = new Set();
+  if (!hideDupRaw) return hide;
+  const byKey = new Map(); // dir/base -> { jpegs: n, rawIds: [] }
+  for (const p of list) {
+    const k = rawPairKey(p);
+    if (!k) continue;
+    const key = `${k.dir}/${k.base}`;
+    let e = byKey.get(key);
+    if (!e) {
+      e = { jpegs: 0, rawIds: [] };
+      byKey.set(key, e);
+    }
+    if (JPEG_EXTS.has(k.ext)) e.jpegs++;
+    else if (RAWSIDE_EXTS.has(k.ext)) e.rawIds.push(p.id);
+  }
+  for (const e of byKey.values()) {
+    if (e.jpegs > 0) for (const id of e.rawIds) hide.add(id);
+  }
+  return hide;
+}
+
+function filterDupRaws(list) {
+  const hide = dupRawHideSet(list);
+  return hide.size ? list.filter((p) => !hide.has(p.id)) : list;
 }
 // Expanded subfolder paths in the tree panel — ALL nodes start collapsed
 // (roots too, C-19.15). The tree itself is cached per session so toggling
@@ -739,17 +827,26 @@ els.navPhotos.addEventListener("click", () => {
 // Top icon-bar button: ALWAYS returns to the normal photo view (C-19.19).
 els.btnGalleryView.addEventListener("click", () => {
   switchView("photos");
-  if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
-    loadPhotos();
-  }
+  refreshPhotosView();
 });
+
+/// Return to the photos grid WITHOUT losing an active search (C-19.21):
+/// loadPhotos() would repaint the full list over the results while the
+/// input still shows the query — re-run the search instead.
+function hasActiveQuery() {
+  return !!(els.searchInput.value.trim() || els.semanticSearchInput.value.trim());
+}
+function refreshPhotosView() {
+  if (hasActiveQuery()) runSearch();
+  else loadPhotos();
+}
 
 /// Sidebar camera semantics (C-19.19): inside the camera family just refresh
 /// the current view; from other pages switch to photos.
 function cameraClick() {
   if (!els.viewPhotos.classList.contains("view--hidden")) {
     // Keep the current search results when a query is active (old behavior).
-    if (!els.searchInput.value.trim() && !els.semanticSearchInput.value.trim()) {
+    if (!hasActiveQuery()) {
       loadPhotos();
     }
     return;
@@ -762,16 +859,17 @@ function cameraClick() {
     loadDuplicates();
     return;
   }
-  // Anywhere else: go to the photos page.
+  // Anywhere else: go to the photos page — restore the search when one is
+  // active, the full list otherwise (C-19.21).
   switchView("photos");
-  loadPhotos();
+  refreshPhotosView();
 }
 els.navFolders.addEventListener("click", () => { switchView("folders"); loadFolders(); });
 els.navTags.addEventListener("click", () => { switchView("tags"); renderTags(); });
 // Rejects moved from the sidebar to the icon bar (C-19.19).
 els.btnRejectsView.addEventListener("click", () => {
   switchView("rejects");
-  loadRejects();
+  refreshRejectsView();
   // Re-render the condition labels in the CURRENT language — the initial
   // render runs before initI18n resolves (default en-US), so entering the
   // page must refresh them (C-19.1).
@@ -2669,6 +2767,7 @@ async function loadPhotos(folderId = null, opts = {}) {
     if (folderScope && folderScope.path) {
       list = list.filter((p) => p.path.startsWith(folderScope.path));
     }
+    list = filterDupRaws(list);
     allPhotos = list;
     // ALWAYS render into the photos grid: currentGrid may be the rejects
     // grid when a refresh is triggered from there (delete / scan), and
@@ -2994,7 +3093,7 @@ async function runSearch() {
     if (folderScope && folderScope.path) {
       list = list.filter((p) => p.path.startsWith(folderScope.path));
     }
-    return list;
+    return filterDupRaws(list);
   };
   if (q2) {
     try {
@@ -3072,9 +3171,9 @@ function renderRejectsList(shown) {
 async function loadRejects() {
   try {
     const photos = await invoke("get_photos", { folderId: null });
-    allRejects = photos;
+    allRejects = filterDupRaws(photos);
     // Shared filters (colors/lens/focal/rating) ∩ reject conditions.
-    const shown = applyRejectConds(applyFilters(photos));
+    const shown = applyRejectConds(applyFilters(allRejects));
     renderRejectsList(shown);
     requestAnimationFrame(fillGridIfNeeded);
   } catch (e) {
@@ -3097,14 +3196,22 @@ async function runRejectSearch() {
   }
   try {
     const res = await invoke("search", { query: q, mode: "semantic" });
-    allRejects = res;
-    const shown = applyRejectConds(applyFilters(res));
+    allRejects = filterDupRaws(res);
+    const shown = applyRejectConds(applyFilters(allRejects));
     renderRejectsList(shown);
   } catch (e) {
     console.error(e);
     renderRejectsList([]);
     els.rejectStatus.textContent = t("search.semantic.error");
   }
+}
+
+/// Re-enter the rejects view without losing an active reject search —
+/// loadRejects() alone would repaint the full list under a filled input
+/// (same class of bug as the photos view, C-19.21).
+function refreshRejectsView() {
+  if (els.rejectSearchInput.value.trim()) runRejectSearch();
+  else loadRejects();
 }
 
 // Rating filtering now lives in the shared star-rating panel (C-19.14) —
@@ -3126,6 +3233,14 @@ async function loadDuplicates() {
     const scope = folderScope ? { folder_id: folderScope.rootId, path: folderScope.path } : null;
     const groups = await invoke("find_duplicates", { scope });
     dupGroups = groups || [];
+    // Hide duplicate RAWs per group (same-named JPEG/RAW across the whole
+    // view, C-19.21); groups that end up empty are dropped by the renderer.
+    const hide = dupRawHideSet(dupGroups.flat());
+    if (hide.size) {
+      dupGroups = dupGroups
+        .map((g) => g.filter((d) => !hide.has(d.id)))
+        .filter((g) => g.length > 0);
+    }
     // Flatten for Ctrl+A / multi-select bookkeeping (currentPhotos).
     const flat = [];
     for (const g of dupGroups) for (const d of g) flat.push(d);

@@ -115,6 +115,23 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+/* View-menu divider + checked item (hide duplicate RAWs, C-19.21) */
+.titlebar__menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--separator);
+}
+.titlebar__menu-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.titlebar__menu-checkmark {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
 /* Window controls: three separate buttons (C-19.13) */
 .titlebar__controls {
   display: flex;

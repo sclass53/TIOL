@@ -222,9 +222,18 @@ impl AIEngine {
         ))
     }
 
-    /// Image embedding (SigLIP vision encoder), normalized.
+    /// Image embedding (SigLIP vision encoder), normalized — full-size source.
     pub fn embed_image(&self, image_path: &Path) -> Result<Vec<f32>> {
-        let data = Self::preprocess_image(image_path)?;
+        let img = crate::utils::decode_image(image_path)
+            .map_err(|e| AppError::Ai(format!("open {}: {e}", image_path.display())))?;
+        self.embed_dynamic(&img)
+    }
+
+    /// Embed an already-decoded image (C-19.23): lets the AI queue embed
+    /// from the small thumbnail cache instead of decoding full-size sources
+    /// (RAW previews / 24MP JPEGs dominate indexing time).
+    pub fn embed_dynamic(&self, img: &image::DynamicImage) -> Result<Vec<f32>> {
+        let data = Self::preprocess_img(img)?;
         let tensor = Tensor::from_array((vec![1i64, 3, 224, 224], data))
             .map_err(|e| AppError::Ai(e.to_string()))?;
         let mut vision = self.vision.lock().unwrap_or_else(|e| e.into_inner());
@@ -304,9 +313,17 @@ impl AIEngine {
 
     /// Decode an image to a normalized flat [1, 3, 224, 224] f32 tensor.
     /// CLIP-style normalization (SigLIP inherits it): pixels /255 -> [-1, 1].
+    /// decode_image falls back to the RAW embedded preview (C-19.21).
+    /// Kept for tests — production embeds via embed_dynamic (C-19.23).
+    #[cfg(test)]
     fn preprocess_image(image_path: &Path) -> Result<Vec<f32>> {
-        let img = image::open(image_path)
+        let img = crate::utils::decode_image(image_path)
             .map_err(|e| AppError::Ai(format!("open {}: {e}", image_path.display())))?;
+        Self::preprocess_img(&img)
+    }
+
+    /// Normalize an already-decoded image into the SigLIP input tensor.
+    fn preprocess_img(img: &image::DynamicImage) -> Result<Vec<f32>> {
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Triangle);
         let rgb = img.to_rgb8();
         let mut data = vec![0f32; 3 * 224 * 224];

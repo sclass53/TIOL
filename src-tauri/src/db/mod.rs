@@ -397,6 +397,41 @@ impl Db {
         Ok(rec)
     }
 
+    /// JPEG twin of a file (C-19.23): any OTHER file in the library sharing
+    /// the same filename stem (case-insensitive) with a jpg/jpeg extension.
+    /// RAW + JPEG copies of one shot often live in DIFFERENT folders, so the
+    /// match is whole-library by design (user-confirmed). The AI queue uses
+    /// this to skip embedding RAW twins — the JPEG represents the same photo.
+    pub fn find_jpeg_twin(&self, file_id: i64) -> Result<Option<i64>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let filename: Option<String> = conn
+            .query_row(
+                "SELECT filename FROM files WHERE id=?1",
+                params![file_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let Some(filename) = filename else {
+            return Ok(None);
+        };
+        let Some((stem, _)) = filename.rsplit_once('.') else {
+            return Ok(None);
+        };
+        if stem.is_empty() {
+            return Ok(None);
+        }
+        let jpg = format!("{stem}.jpg").to_lowercase();
+        let jpeg = format!("{stem}.jpeg").to_lowercase();
+        conn.query_row(
+            "SELECT id FROM files WHERE id != ?1 AND lower(filename) IN (?2, ?3) LIMIT 1",
+            params![file_id, jpg, jpeg],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    }
+
     pub fn search_files(&self, query: &str) -> Result<Vec<FileRecord>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let like = format!("%{}%", query);
@@ -1185,6 +1220,54 @@ impl Db {
             by_id.insert(rec.id, rec);
         }
         Ok(ids.iter().filter_map(|id| by_id.get(id).cloned()).collect())
+    }
+
+    /// Same-photo RAW counterparts of the given records (C-19.23): other
+    /// files — ANY folder — with a matching stem and a camera-RAW extension.
+    /// Semantic hits are JPEGs (RAW twins are never embedded), and attaching
+    /// their RAW twins makes a search show BOTH files of a pair; the
+    /// frontend "hide duplicate RAW" toggle filters them back out.
+    pub fn raw_twins_of(&self, hits: &[FileRecord]) -> Result<Vec<FileRecord>, String> {
+        let mut stems: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut hit_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for h in hits {
+            hit_ids.insert(h.id);
+            let p = std::path::Path::new(&h.path);
+            if crate::utils::is_raw_path(p) {
+                continue;
+            }
+            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                if !stem.is_empty() {
+                    stems.insert(stem.to_lowercase());
+                }
+            }
+        }
+        if stems.is_empty() {
+            return Ok(Vec::new());
+        }
+        let twin_ids = {
+            let conn = self.conn.lock().map_err(|e| e.to_string())?;
+            let mut stmt = conn
+                .prepare("SELECT id, filename FROM files")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            let mut twin_ids: Vec<i64> = Vec::new();
+            for row in rows {
+                let (id, name) = row.map_err(|e| e.to_string())?;
+                if hit_ids.contains(&id) {
+                    continue;
+                }
+                if let Some((stem, ext)) = name.rsplit_once('.') {
+                    if stems.contains(&stem.to_lowercase()) && crate::utils::is_raw_ext(ext) {
+                        twin_ids.push(id);
+                    }
+                }
+            }
+            twin_ids
+        };
+        self.get_files_by_ids(&twin_ids)
     }
 
     // ---- custom tags (ADD.md §2) ----

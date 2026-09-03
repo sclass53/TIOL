@@ -5,15 +5,14 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 const ALLOWED_EXTS: &[&str] = &[
-    "jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "tif", "heic", "heif", "raw",
-    // Videos (.mp4/.mov/...) are intentionally NOT included — the AI pipeline
-    // (SigLIP embedding/tagging) and thumbnails are image-only (C-11.7).
+    "jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "tif", "heic", "heif",
+    // Camera RAW (C-19.21): NEF/ARW/CR2/... — decoded via the embedded JPEG
+    // preview (utils::decode_image). Videos (.mp4/...) stay excluded (C-11.7).
 ];
-
 fn is_allowed(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let lower = ext.to_ascii_lowercase();
-        ALLOWED_EXTS.contains(&lower.as_str())
+        ALLOWED_EXTS.contains(&lower.as_str()) || crate::utils::is_raw_ext(&lower)
     } else {
         false
     }

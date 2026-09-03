@@ -106,6 +106,16 @@ pub async fn run_consumer(
     app: Option<tauri::AppHandle>,
 ) {
     let mut processed: u64 = 0;
+    // C-19.23: thumbnail cache dir — when a file's thumbnail exists the
+    // queue embeds from it (360px decode ≈ ms) instead of the full-size
+    // source (RAW previews / 24MP JPEGs ≈ 100ms+ per file). Same key
+    // (hash of display path + mtime) the frontend/prewarm use, so any
+    // already-generated thumbnail is a direct hit.
+    use tauri::Manager;
+    let cache_dir: Option<std::path::PathBuf> = app
+        .as_ref()
+        .and_then(|a| a.path().app_data_dir().ok())
+        .map(|d| crate::utils::cache_dir(&d));
     // Throttle for the floating progress badge: emit at most every 300ms,
     // but ALWAYS emit when the queue empties (badge hides).
     let mut last_progress = std::time::Instant::now() - Duration::from_secs(1);
@@ -154,7 +164,9 @@ pub async fn run_consumer(
         loop {
             let guard = engine.lock().await;
             let result = match guard.as_ref() {
-                Some(eng) => process_one(eng, &tag_cache, &db, &task, &mut empty_warned).await,
+                Some(eng) => {
+                    process_one(eng, &tag_cache, &db, &task, cache_dir.as_deref(), &mut empty_warned).await
+                }
                 None => Err("engine not ready".to_string()),
             };
             drop(guard);
@@ -172,8 +184,12 @@ pub async fn run_consumer(
                 }
             }
         }
-        // Idle throttle (ADD.md §5): low CPU when the queue is quiet.
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Idle throttle (ADD.md §5): low CPU when the queue is quiet. Only
+        // sleep when nothing is waiting — the old unconditional 100ms per
+        // task added ~70s of pure delay to a 690-file index (C-19.23).
+        if rx.is_empty() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         processed += 1;
         if processed % 20 == 0 {
             log::info!("AI queue: {processed} files processed");
@@ -207,15 +223,44 @@ async fn process_one(
     tag_cache: &Arc<std::sync::RwLock<Vec<TagVec>>>,
     db: &Db,
     task: &AITask,
+    cache_dir: Option<&std::path::Path>,
     empty_warned: &mut bool,
 ) -> Result<(), String> {
     let path = std::path::Path::new(&task.path);
+
+    // ---- C-19.23: RAW with a same-stem JPEG twin anywhere in the library
+    // is NOT embedded — the JPEG represents the same photo (RAW indexing is
+    // also by far the slowest path: it decodes a full-size preview). The
+    // ai_processed flag is intentionally left untouched so a RAW whose JPEG
+    // twin disappears later becomes pending again at the next startup and
+    // gets indexed then (self-heal).
+    if crate::utils::is_raw_path(path) {
+        if let Some(twin) = db.find_jpeg_twin(task.file_id).map_err(|e| e.to_string())? {
+            log::debug!("skip AI work for {} (RAW twin of file {twin})", task.path);
+            if task.kind == TaskKind::TagAll {
+                // Manual tagging pass: carry the twin's AI tags over so this
+                // RAW converges (and stops re-enqueueing) without an
+                // embedding of its own. Manual tags are never touched.
+                if let Ok(twin_tags) = db.get_file_tags(twin) {
+                    let tags: Vec<(String, f32)> = twin_tags
+                        .iter()
+                        .filter(|t| t.source == 1 && t.name != "unknown")
+                        .map(|t| (t.name.clone(), t.confidence as f32))
+                        .collect();
+                    if !tags.is_empty() {
+                        let _ = db.set_file_tags(task.file_id, &tags, 1);
+                    }
+                }
+            }
+            return Ok(());
+        }
+    }
 
     // ---- Index: embed only (new/changed files). Existing tags and the
     // "unknown" sentinel are left exactly as they are.
     if task.kind == TaskKind::Index {
         if !db.has_embedding(task.file_id).unwrap_or(false) {
-            match engine.embed_image(path) {
+            match embed_task_image(engine, db, task, cache_dir) {
                 Ok(vec) => {
                     db.update_embedding(task.file_id, &vec)?;
                 }
@@ -235,7 +280,7 @@ async fn process_one(
     // (files re-enqueued for tagging only).
     let mut img_vec: Option<Vec<f32>> = None;
     if !db.has_embedding(task.file_id).unwrap_or(false) {
-        match engine.embed_image(path) {
+        match embed_task_image(engine, db, task, cache_dir) {
             Ok(vec) => {
                 db.update_embedding(task.file_id, &vec)?;
                 img_vec = Some(vec);
@@ -273,7 +318,7 @@ async fn process_one(
             Some(v) => v,
             None => match db.get_embedding(task.file_id)? {
                 Some(v) => v,
-                None => engine.embed_image(path).map_err(|e| e.to_string())?,
+                None => embed_task_image(engine, db, task, cache_dir)?,
             },
         };
         let mut hits: Vec<(String, f32)> = Vec::new();
@@ -320,4 +365,33 @@ async fn process_one(
     // 3. Done.
     db.set_ai_processed(task.file_id, 3)?;
     Ok(())
+}
+
+/// Embed a file for the AI queue (C-19.23). Fast path: the file's cached
+/// 360px thumbnail (key = hash(display path, mtime) — same key the
+/// frontend/prewarm use) decodes in a few ms and is resized to the 224px
+/// SigLIP input; any miss or corrupted thumb falls back to decoding the
+/// full-size source, so behavior is unchanged when no thumbnail exists yet
+/// (e.g. the prewarm is still running).
+fn embed_task_image(
+    engine: &AIEngine,
+    db: &Db,
+    task: &AITask,
+    cache_dir: Option<&std::path::Path>,
+) -> Result<Vec<f32>, String> {
+    if let Some(cd) = cache_dir {
+        if let Ok(Some(rec)) = db.get_file_by_id(task.file_id) {
+            let tp = crate::utils::thumbnail_path(cd, &rec.path, rec.mtime);
+            if tp.exists() {
+                if let Ok(img) = image::open(&tp) {
+                    if let Ok(v) = engine.embed_dynamic(&img) {
+                        return Ok(v);
+                    }
+                }
+            }
+        }
+    }
+    engine
+        .embed_image(std::path::Path::new(&task.path))
+        .map_err(|e| e.to_string())
 }
