@@ -57,6 +57,7 @@ const els = {
   // Secondary icon bar + slide-out panel (C-19.15)
   iconBar: document.getElementById("iconbar"),
   btnPanelTree: document.getElementById("btn-panel-tree"),
+  btnPanelAlbum: document.getElementById("btn-panel-album"),
   btnPanelTag: document.getElementById("btn-panel-tag"),
   btnPanelColors: document.getElementById("btn-panel-colors"),
   btnPanelEraser: document.getElementById("btn-panel-eraser"),
@@ -90,6 +91,7 @@ const els = {
   btnRestart: document.getElementById("btn-restart"),
   gpuStatus: document.getElementById("gpu-status"),
   btnClearCache: document.getElementById("btn-clear-cache"),
+  btnReplayOnboarding: document.getElementById("btn-replay-onboarding"),
   btnClearTags: document.getElementById("btn-clear-tags"),
   btnRunTagging: document.getElementById("btn-run-tagging"),
   taggingStatus: document.getElementById("tagging-status"),
@@ -115,6 +117,7 @@ const els = {
   selectionCount: document.getElementById("selection-count"),
   btnSelectionTag: document.getElementById("btn-selection-tag"),
   btnSelectionRate: document.getElementById("btn-selection-rate"),
+  btnSelectionAlbum: document.getElementById("btn-selection-album"),
   btnSelectionExport: document.getElementById("btn-selection-export"),
   btnSelectionDelete: document.getElementById("btn-selection-delete"),
   btnSelectionClearTags: document.getElementById("btn-selection-clear-tags"),
@@ -283,9 +286,22 @@ document.addEventListener("click", (e) => {
 // ANOTHER icon switches the panel (stays open); clicking the SAME icon closes.
 // Each mode keeps its own selection state.
 let sidePanelBtn = null;
-let sideMode = null; // "tags" | "colors" | "tree" | "eraser"
+let sideMode = null; // "tags" | "colors" | "tree" | "albums" | "eraser"
 let sideTag = null; // selected tag name (tags mode)
 let sideColor = null; // selected color (colors mode)
+// ---------------------------------------------------------------------------
+// Album scope (C-19.24): the albums side panel narrows the photos grid.
+// null = no album filter; otherwise one of —
+//   { kind: "album", id, name }  → membership of a user album
+//   { kind: "lens",  name }      → smart group: photos shot with this lens
+//   { kind: "color", name }      → smart group: photos carrying this color tag
+// Mutually exclusive with folderScope: picking one clears the other.
+// ---------------------------------------------------------------------------
+let albumScope = null;
+let albumCache = null; // get_albums() result, invalidated on any membership change
+let albumBranchOpen = { mine: true, lens: false, colors: false };
+// Photos being dragged onto an album row (set by card dragstart, C-19.24).
+let dragFileIds = [];
 // Folder scope (tree mode): null = all photos; else { rootId, path } —
 // photos are fetched for the ROOT folder and narrowed by path prefix so
 // subfolders of an imported folder work too (C-19.15).
@@ -295,6 +311,26 @@ let folderScope = null;
 // then (C-19.17).
 function syncTreeIcon() {
   els.btnPanelTree.classList.toggle("iconbar__btn--scoped", folderScope != null);
+}
+function syncAlbumIcon() {
+  els.btnPanelAlbum.classList.toggle("iconbar__btn--scoped", albumScope != null);
+}
+/// Leave the current album scope (C-19.24) — returns true when something
+/// actually changed so callers can re-render.
+function clearAlbumScope() {
+  if (albumScope == null) return false;
+  albumScope = null;
+  syncAlbumIcon();
+  return true;
+}
+/// Album-scope membership test for already-fetched records (lens/color smart
+/// groups; real albums filter by id set — see runSearch/loadPhotos).
+function inAlbumScope(p, memberIds) {
+  if (!albumScope) return true;
+  if (albumScope.kind === "album") return memberIds ? memberIds.has(p.id) : true;
+  if (albumScope.kind === "lens") return (p.lens || "").trim() === albumScope.name;
+  if (albumScope.kind === "color") return (p.colors || []).includes(albumScope.name);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +599,8 @@ async function renderSidePanel(mode) {
       }
       btn.addEventListener("click", () => {
         folderScope = { rootId: node.root_id, path: node.path };
+        // Scopes are exclusive (C-19.24): picking a folder leaves the album.
+        clearAlbumScope();
         syncTreeIcon();
         loadPhotos();
         if (!els.viewDuplicates.classList.contains("view--hidden")) loadDuplicates();
@@ -571,16 +609,21 @@ async function renderSidePanel(mode) {
       row.appendChild(btn);
       p.appendChild(row);
       if (hasKids) {
+        // Grid-unfold container (C-19.26): rows live in an inner wrapper so
+        // grid-template-rows 0fr→1fr animates the branch height smoothly.
         const kids = document.createElement("div");
-        kids.className = "sidepanel__kids";
-        kids.hidden = !expanded;
+        kids.className =
+          "sidepanel__kids" + (expanded ? " sidepanel__kids--open" : "");
+        const inner = document.createElement("div");
+        inner.className = "sidepanel__kids-inner";
+        kids.appendChild(inner);
         for (const child of node.children) {
-          kids.appendChild(renderNode(child, depth + 1));
+          inner.appendChild(renderNode(child, depth + 1));
         }
         tri.addEventListener("click", (e) => {
           e.stopPropagation();
-          const open = kids.hidden;
-          kids.hidden = !open;
+          const open = !kids.classList.contains("sidepanel__kids--open");
+          kids.classList.toggle("sidepanel__kids--open", open);
           tri.classList.toggle("sidepanel__tri--open", open);
           tri.title = open ? t("sidepanel.collapse") : t("sidepanel.expand");
           if (open) treeExpanded.add(node.path);
@@ -591,10 +634,368 @@ async function renderSidePanel(mode) {
       return row; // parents append children into their own kids container
     };
     for (const root of trees) renderNode(root, 0);
+  } else if (mode === "albums") {
+    await renderAlbumsPanel(p);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Albums side panel (C-19.24): three branches — My Albums (user albums:
+// create / rename / delete / drop targets), Lens Groups and Color Groups
+// (smart groups from photo metadata). Clicking a leaf scopes the photos
+// grid; picking a scope here clears the folder scope and vice versa.
+// ---------------------------------------------------------------------------
+// Native drag-drop handling is DISABLED on the window (dragDropEnabled:
+// false, C-19.25) so HTML5 card→album drags reach these handlers. The
+// tradeoff: WebView2 would navigate to an OS file dropped into the window —
+// swallow it here (element-level album drop handlers run first via bubbling;
+// a preventDefault at window level only cancels the navigation).
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+async function renderAlbumsPanel(p) {
+  // "All photos" — exit any album scope (mirrors the tree panel's row).
+  const allBtn = document.createElement("button");
+  allBtn.className =
+    "sidepanel__item" + (albumScope == null ? " sidepanel__item--active" : "");
+  allBtn.textContent = t("sidepanel.all");
+  allBtn.addEventListener("click", () => {
+    if (clearAlbumScope()) refreshPhotosView();
+    renderSidePanel("albums");
+  });
+  p.appendChild(allBtn);
+
+  // Data for the branch contents — both cached, so panel rebuilds stay cheap.
+  let albums = [];
+  try {
+    albums = albumCache || (albumCache = await invoke("get_albums"));
+  } catch (e) {
+    reportJs("side-albums", String(e));
+  }
+  let lenses = [];
+  try {
+    lenses = await ensureLensList();
+  } catch (e) {
+    lenses = [];
+  }
+
+  // Branch header + persistent content container (C-19.25/26): the triangle
+  // toggles the container IN PLACE (same mechanism as the folder tree,
+  // C-19.15) so BOTH the rotate and the grid-unfold transition play —
+  // rebuilding the panel would destroy the animation start point.
+  // body.fx-anim-off kills the transitions via the shared rule. Content is
+  // CLEARED then rebuilt when opened: album/lens data are cached, so this
+  // is cheap and stays fresh (appending without clearing duplicated the
+  // lens list on every re-expand, C-19.26).
+  const branch = (key, label, onAdd, buildContent) => {
+    const row = document.createElement("div");
+    row.className = "sidepanel__branch";
+    const tri = document.createElement("button");
+    tri.className = "sidepanel__tri" + (albumBranchOpen[key] ? " sidepanel__tri--open" : "");
+    tri.textContent = "▶";
+    const kids = document.createElement("div");
+    kids.className =
+      "sidepanel__kids" + (albumBranchOpen[key] ? " sidepanel__kids--open" : "");
+    const inner = document.createElement("div");
+    inner.className = "sidepanel__kids-inner";
+    kids.appendChild(inner);
+    tri.addEventListener("click", () => {
+      const open = !kids.classList.contains("sidepanel__kids--open");
+      kids.classList.toggle("sidepanel__kids--open", open);
+      tri.classList.toggle("sidepanel__tri--open", open);
+      albumBranchOpen[key] = open;
+      if (open && buildContent) {
+        inner.textContent = "";
+        buildContent(inner);
+      }
+    });
+    const title = document.createElement("span");
+    title.className = "sidepanel__branch-title";
+    title.textContent = label;
+    row.appendChild(tri);
+    row.appendChild(title);
+    if (onAdd) {
+      const add = document.createElement("button");
+      add.className = "sidepanel__add";
+      add.textContent = "＋";
+      add.title = t("albums.new");
+      add.addEventListener("click", onAdd);
+      row.appendChild(add);
+    }
+    p.appendChild(row);
+    p.appendChild(kids);
+    if (albumBranchOpen[key] && buildContent) buildContent(inner);
+  };
+
+  // --- My Albums ---
+  branch("mine", t("albums.title"), () => promptNewAlbum(), (kids) => {
+    for (const a of albums) kids.appendChild(buildAlbumRow(a));
+    if (!albums.length) {
+      const d = document.createElement("div");
+      d.className = "sidepanel__empty";
+      d.textContent = t("albums.empty");
+      kids.appendChild(d);
+    }
+  });
+
+  // --- Lens Groups ---
+  branch("lens", t("albums.lenses"), null, (kids) => {
+    for (const name of lenses) {
+      kids.appendChild(buildSmartRow("lens", name, name));
+    }
+    if (!lenses.length) {
+      const d = document.createElement("div");
+      d.className = "sidepanel__empty";
+      d.textContent = t("albums.noLenses");
+      kids.appendChild(d);
+    }
+  });
+
+  // --- Color Groups ---
+  branch("colors", t("albums.colors"), null, (kids) => {
+    for (const c of COLOR_ORDER) {
+      const row = buildSmartRow("color", t(`colors.${c}`), c);
+      const dot = document.createElement("span");
+      dot.className = "color-dot color-dot--filter";
+      styleColorDot(dot, c);
+      row._itemBtn.prepend(dot);
+      kids.appendChild(row);
+    }
+  });
+}
+
+/// One user-album row: click scopes, dblclick renames, ✕ deletes (confirm),
+/// and it is a DROP TARGET for cards (C-19.24).
+function buildAlbumRow(a) {
+  const row = document.createElement("div");
+  row.className = "sidepanel__row";
+  const spacer = document.createElement("span");
+  spacer.className = "sidepanel__tri-spacer";
+  row.appendChild(spacer);
+  const btn = document.createElement("button");
+  btn.className =
+    "sidepanel__item sidepanel__item--tree" +
+    (albumScope && albumScope.kind === "album" && albumScope.id === a.id
+      ? " sidepanel__item--active"
+      : "");
+  btn.style.paddingLeft = "10px";
+  const label = document.createElement("span");
+  label.className = "sidepanel__label";
+  label.textContent = a.name;
+  btn.appendChild(label);
+  const pill = document.createElement("span");
+  pill.className = "sidepanel__count";
+  pill.textContent = String(a.count);
+  pill.title = t("folders.count", { count: a.count });
+  btn.appendChild(pill);
+  const del = document.createElement("button");
+  del.className = "sidepanel__row-del";
+  del.textContent = "✕";
+  del.title = t("albums.delete");
+  del.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    confirmDialog(t("albums.deleteConfirm", { name: a.name }), async () => {
+      try {
+        await invoke("delete_album", { albumId: a.id });
+        albumCache = null;
+        if (albumScope && albumScope.kind === "album" && albumScope.id === a.id) {
+          clearAlbumScope();
+          refreshPhotosView();
+        }
+        if (sideMode === "albums") renderSidePanel("albums");
+        toast(t("albums.deleted"));
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+  });
+  btn.appendChild(del);
+  btn.title = a.name;
+  btn.addEventListener("click", () => {
+    albumScope =
+      albumScope && albumScope.kind === "album" && albumScope.id === a.id
+        ? null
+        : { kind: "album", id: a.id, name: a.name };
+    // Scopes are exclusive (C-19.24).
+    if (albumScope && folderScope) {
+      folderScope = null;
+      syncTreeIcon();
+    }
+    syncAlbumIcon();
+    refreshPhotosView();
+    renderSidePanel("albums");
+  });
+  btn.addEventListener("dblclick", () => {
+    promptRenameAlbum(a);
+  });
+  // Drop target: cards dragged onto the album join it.
+  btn.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "copy";
+    btn.classList.add("sidepanel__item--drop");
+  });
+  btn.addEventListener("dragleave", () => {
+    btn.classList.remove("sidepanel__item--drop");
+  });
+  btn.addEventListener("drop", async (ev) => {
+    ev.preventDefault();
+    btn.classList.remove("sidepanel__item--drop");
+    await addPhotosToAlbum(a, dragFileIds.length ? dragFileIds : []);
+  });
+  row._itemBtn = btn;
+  row.appendChild(btn);
+  return row;
+}
+
+/// Lens/color smart-group row (no management actions, click = scope).
+function buildSmartRow(kind, label, value) {
+  const row = document.createElement("div");
+  row.className = "sidepanel__row";
+  const spacer = document.createElement("span");
+  spacer.className = "sidepanel__tri-spacer";
+  row.appendChild(spacer);
+  const btn = document.createElement("button");
+  btn.className =
+    "sidepanel__item sidepanel__item--tree" +
+    (albumScope && albumScope.kind === kind && albumScope.name === value
+      ? " sidepanel__item--active"
+      : "");
+  btn.style.paddingLeft = "10px";
+  const labelEl = document.createElement("span");
+  labelEl.className = "sidepanel__label";
+  labelEl.textContent = label;
+  btn.appendChild(labelEl);
+  btn.title = label;
+  btn.addEventListener("click", () => {
+    albumScope =
+      albumScope && albumScope.kind === kind && albumScope.name === value
+        ? null
+        : { kind, name: value };
+    if (albumScope && folderScope) {
+      folderScope = null;
+      syncTreeIcon();
+    }
+    syncAlbumIcon();
+    refreshPhotosView();
+    renderSidePanel("albums");
+  });
+  row._itemBtn = btn;
+  row.appendChild(btn);
+  return row;
+}
+
+/// Inline input dialog (create / rename) — mirrors confirmDialog's overlay.
+let albumPromptCallback = null;
+function albumPromptDialog(title, def, onOk) {
+  let overlay = document.getElementById("album-prompt-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.className = "dialog-overlay";
+    overlay.id = "album-prompt-overlay";
+    overlay.innerHTML = `
+      <div class="dialog">
+        <div class="dialog__message" id="album-prompt-title"></div>
+        <input class="dialog__input" id="album-prompt-input" type="text" />
+        <div class="dialog__actions">
+          <button class="btn btn--ghost" id="album-prompt-cancel"></button>
+          <button class="btn btn--primary" id="album-prompt-ok"></button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeAlbumPrompt();
+    });
+  }
+  const input = overlay.querySelector("#album-prompt-input");
+  overlay.querySelector("#album-prompt-title").textContent = title;
+  overlay.querySelector("#album-prompt-cancel").textContent = t("dialog.cancel");
+  overlay.querySelector("#album-prompt-ok").textContent = t("dialog.ok");
+  input.value = def || "";
+  albumPromptCallback = onOk;
+  overlay.hidden = false;
+  setSelectionBarVisible(false);
+  input.focus();
+  input.select();
+}
+function closeAlbumPrompt() {
+  albumPromptCallback = null;
+  const overlay = document.getElementById("album-prompt-overlay");
+  if (overlay) overlay.hidden = true;
+  setSelectionBarVisible(true);
+}
+function promptNewAlbum() {
+  albumPromptDialog(t("albums.new"), "", async (name) => {
+    try {
+      const a = await invoke("create_album", { name });
+      albumCache = null;
+      albumBranchOpen.mine = true;
+      if (sideMode === "albums") renderSidePanel("albums");
+      toast(t("albums.created", { name: a.name }));
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+}
+function promptRenameAlbum(a) {
+  albumPromptDialog(t("albums.rename"), a.name, async (name) => {
+    try {
+      await invoke("rename_album", { albumId: a.id, name });
+      albumCache = null;
+      if (albumScope && albumScope.kind === "album" && albumScope.id === a.id) {
+        albumScope = { ...albumScope, name };
+      }
+      if (sideMode === "albums") renderSidePanel("albums");
+    } catch (e) {
+      alert(String(e));
+    }
+  });
+}
+document.addEventListener("click", (e) => {
+  const overlay = document.getElementById("album-prompt-overlay");
+  if (overlay && !overlay.hidden && e.target.id === "album-prompt-ok") {
+    const cb = albumPromptCallback;
+    const name = overlay.querySelector("#album-prompt-input").value;
+    closeAlbumPrompt();
+    if (cb) cb(name.trim());
+  }
+});
+document.addEventListener("keydown", (e) => {
+  const overlay = document.getElementById("album-prompt-overlay");
+  if (!overlay || overlay.hidden) return;
+  if (e.key === "Escape") closeAlbumPrompt();
+  if (e.key === "Enter") {
+    const cb = albumPromptCallback;
+    const name = overlay.querySelector("#album-prompt-input").value;
+    closeAlbumPrompt();
+    if (cb) cb(name.trim());
+  }
+});
+
+/// Add photos to an album (drop / selection bar) — shared post-processing:
+/// invalidate counts, refresh the open panel, refresh the grid when the
+/// target album is on screen.
+async function addPhotosToAlbum(album, ids) {
+  if (!ids.length) return;
+  try {
+    const added = await invoke("add_files_to_album", { albumId: album.id, fileIds: ids });
+    albumCache = null;
+    if (sideMode === "albums") renderSidePanel("albums");
+    if (
+      albumScope &&
+      albumScope.kind === "album" &&
+      albumScope.id === album.id &&
+      added > 0
+    ) {
+      loadPhotos();
+    }
+    showSelectionHint(t("albums.added", { count: added, name: album.name }));
+  } catch (e) {
+    alert(String(e));
   }
 }
 
 els.btnPanelTree.addEventListener("click", () => toggleSidePanel(els.btnPanelTree, "tree"));
+els.btnPanelAlbum.addEventListener("click", () => toggleSidePanel(els.btnPanelAlbum, "albums"));
 els.btnPanelTag.addEventListener("click", () => toggleSidePanel(els.btnPanelTag, "tags"));
 els.btnPanelColors.addEventListener("click", () => toggleSidePanel(els.btnPanelColors, "colors"));
 
@@ -822,7 +1223,6 @@ els.navPhotos.addEventListener("click", () => {
   // Sidebar camera button: photos/rejects/duplicates are one camera page —
   // clicking it while on one of them refreshes the CURRENT view only (C-19.19).
   cameraClick();
-  onboardingOnPhotosClicked();
 });
 // Top icon-bar button: ALWAYS returns to the normal photo view (C-19.19).
 els.btnGalleryView.addEventListener("click", () => {
@@ -1489,6 +1889,7 @@ function updateSelectionBar() {
   els.btnSelectionTag.disabled = n === 0;
   els.btnSelectionClearTags.disabled = n === 0;
   els.btnSelectionRate.disabled = n === 0;
+  els.btnSelectionAlbum.disabled = n === 0;
   els.btnSelectionExport.disabled = n === 0;
   els.btnSelectionDelete.disabled = n === 0;
   // "Delete files" shows on the REJECTS and DUPLICATES pages (C-19.19).
@@ -1537,6 +1938,77 @@ function showSelectionHint(text) {
 
 els.btnSelectMode.addEventListener("click", () => setSelectMode(!selectMode));
 els.btnSelectionCancel.addEventListener("click", () => setSelectMode(false));
+
+// "Add to album" (C-19.24): popover listing every album + "New album…" —
+// adds ALL selected photos to the pick (idempotent on the backend).
+let albumMenu = null;
+function hideAlbumMenu() {
+  if (albumMenu) {
+    albumMenu.remove();
+    albumMenu = null;
+  }
+}
+els.btnSelectionAlbum.addEventListener("click", async () => {
+  if (!selectedIds.size) return;
+  if (albumMenu) {
+    hideAlbumMenu();
+    return;
+  }
+  let albums = [];
+  try {
+    albums = await invoke("get_albums");
+  } catch (e) {
+    alert(String(e));
+    return;
+  }
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu album-menu";
+  const title = document.createElement("div");
+  title.className = "album-menu__title";
+  title.textContent = t("albums.pick");
+  menu.appendChild(title);
+  for (const a of albums) {
+    const item = document.createElement("button");
+    item.className = "ctx-menu__item";
+    item.textContent = `${a.name} (${a.count})`;
+    item.addEventListener("click", async () => {
+      hideAlbumMenu();
+      await addPhotosToAlbum(a, [...selectedIds]);
+    });
+    menu.appendChild(item);
+  }
+  const create = document.createElement("button");
+  create.className = "ctx-menu__item ctx-menu__item--create";
+  create.textContent = `＋ ${t("albums.new")}`;
+  create.addEventListener("click", () => {
+    hideAlbumMenu();
+    albumPromptDialog(t("albums.new"), "", async (name) => {
+      try {
+        const a = await invoke("create_album", { name });
+        albumCache = null;
+        await addPhotosToAlbum(a, [...selectedIds]);
+        if (sideMode === "albums") renderSidePanel("albums");
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+  });
+  menu.appendChild(create);
+  document.body.appendChild(menu);
+  // Anchor above the selection bar, centered.
+  const w = menu.offsetWidth;
+  menu.style.left = `${Math.max(4, (window.innerWidth - w) / 2)}px`;
+  const barRect = els.selectionBar.getBoundingClientRect();
+  menu.style.top = `${Math.max(4, barRect.top - menu.offsetHeight - 8)}px`;
+  albumMenu = menu;
+});
+window.addEventListener("click", (e) => {
+  if (albumMenu && !e.target.closest(".album-menu, #btn-selection-album")) hideAlbumMenu();
+});
+window.addEventListener("scroll", hideAlbumMenu, true);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hideAlbumMenu();
+});
 
 // "Export" (C-19.10): copy the selected photos into a chosen folder — works
 // from BOTH photo grids.
@@ -2601,6 +3073,18 @@ function buildCard(p) {
     meta.appendChild(descEl);
   }
   card.appendChild(thumb);
+  // Drag onto an album row in the side panel adds the photo to it (C-19.24).
+  // Dragging a card that is part of the multi-select carries the WHOLE
+  // selection; a plain card drags just itself.
+  card.draggable = true;
+  card.addEventListener("dragstart", (ev) => {
+    dragFileIds = selectedIds.has(p.id) ? [...selectedIds] : [p.id];
+    ev.dataTransfer.effectAllowed = "copy";
+    ev.dataTransfer.setData("text/plain", String(p.id));
+  });
+  card.addEventListener("dragend", () => {
+    dragFileIds = [];
+  });
   // Star rating row (C-17): below the thumbnail — click star N to rate the
   // photo 1-5 (clicking the current value clears it); unrated stars show a
   // white outline, rated stars a yellow fill. Never opens the preview.
@@ -2759,13 +3243,24 @@ function updateCardInPlace(p) {
 
 async function loadPhotos(folderId = null, opts = {}) {
   try {
-    // Folder scope from the tree panel wins: fetch the ROOT folder, then
-    // narrow by path prefix so subfolders work (C-19.15).
-    const effId = folderScope ? folderScope.rootId : folderId;
-    const photos = await invoke("get_photos", { folderId: effId });
-    let list = photos;
-    if (folderScope && folderScope.path) {
-      list = list.filter((p) => p.path.startsWith(folderScope.path));
+    // Album scope (C-19.24): fetch the album's members; smart groups (lens /
+    // color) use the regular fetch narrowed by metadata below.
+    let list;
+    if (albumScope && albumScope.kind === "album") {
+      list = await invoke("get_album_files", { albumId: albumScope.id });
+    } else {
+      // Folder scope from the tree panel wins: fetch the ROOT folder, then
+      // narrow by path prefix so subfolders work (C-19.15).
+      const effId = folderScope ? folderScope.rootId : folderId;
+      const photos = await invoke("get_photos", { folderId: effId });
+      list = photos;
+      if (folderScope && folderScope.path) {
+        list = list.filter((p) => p.path.startsWith(folderScope.path));
+      }
+      if (albumScope) {
+        // Lens/color smart group — pure metadata filter (C-19.24).
+        list = list.filter((p) => inAlbumScope(p));
+      }
     }
     list = filterDupRaws(list);
     allPhotos = list;
@@ -2948,6 +3443,28 @@ function showContextMenu(x, y, photo) {
   });
   menu.appendChild(reveal);
   menu.appendChild(wallpaper);
+  // Viewing a user album: offer removing THIS photo from it (C-19.24).
+  if (albumScope && albumScope.kind === "album") {
+    const remove = document.createElement("button");
+    remove.className = "ctx-menu__item";
+    remove.textContent = t("albums.remove");
+    remove.addEventListener("click", async () => {
+      hideContextMenu();
+      try {
+        await invoke("remove_files_from_album", {
+          albumId: albumScope.id,
+          fileIds: [photo.id],
+        });
+        albumCache = null;
+        if (sideMode === "albums") renderSidePanel("albums");
+        loadPhotos();
+        toast(t("albums.removed"));
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+    menu.appendChild(remove);
+  }
   document.body.appendChild(menu);
   const w = menu.offsetWidth;
   const h = menu.offsetHeight;
@@ -3088,10 +3605,25 @@ async function runSearch() {
   semanticRetryCount = 0;
   // Folder scope (C-19.15): when a folder/subfolder is selected in the tree
   // panel, search results are restricted to it (root fetch + path prefix).
+  // Album scope (C-19.24): search results narrow to the scope — real albums
+  // by member-id set (fetched once per run), smart groups by metadata.
+  let albumMemberIds = null;
+  if (albumScope && albumScope.kind === "album") {
+    try {
+      albumMemberIds = new Set(
+        (await invoke("get_album_files", { albumId: albumScope.id })).map((p) => p.id)
+      );
+    } catch (e) {
+      albumMemberIds = new Set();
+    }
+  }
   const scoped = (res) => {
     let list = res || [];
     if (folderScope && folderScope.path) {
       list = list.filter((p) => p.path.startsWith(folderScope.path));
+    }
+    if (albumScope) {
+      list = list.filter((p) => inAlbumScope(p, albumMemberIds));
     }
     return filterDupRaws(list);
   };
@@ -3231,8 +3763,9 @@ async function loadDuplicates() {
   try {
     // Folder scope from the tree panel restricts the scan (C-19.17).
     const scope = folderScope ? { folder_id: folderScope.rootId, path: folderScope.path } : null;
-    const groups = await invoke("find_duplicates", { scope });
-    dupGroups = groups || [];
+    const res = await invoke("find_duplicates", { scope });
+    dupGroups = (res && res.groups) || [];
+    const skipped = (res && res.skipped) || 0;
     // Hide duplicate RAWs per group (same-named JPEG/RAW across the whole
     // view, C-19.21); groups that end up empty are dropped by the renderer.
     const hide = dupRawHideSet(dupGroups.flat());
@@ -3247,6 +3780,12 @@ async function loadDuplicates() {
     currentPhotos = flat;
     renderedCount = flat.length;
     renderDupGroups();
+    // Files whose thumbnails weren't ready sat out this round (C-19.27) —
+    // the prewarm fills their cache; re-entering the view includes them.
+    if (skipped > 0) {
+      els.dupStatus.textContent +=
+        " · " + t("duplicates.skipped", { count: skipped });
+    }
   } catch (e) {
     console.error(e);
     els.dupStatus.textContent = t("duplicates.error");
@@ -3671,15 +4210,21 @@ async function checkForUpdates(manual) {
 btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
 
 // ---------------------------------------------------------------------------
-// First-run onboarding (C-19.7/C-19.8): step-by-step highlight tour shown
-// ONCE per install (DB flag "onboarding_done"). Kept short — the steps after
-// "add a folder" were removed (C-19.8): ① collapse arrow ② folder icon.
+// First-run onboarding (C-19.28/29): a 4-step highlight tour shown ONCE per
+// install (DB flag "onboarding_done"), ONLY when the library is empty.
+// Flow follows the REAL interaction path (C-19.29): ① point at the sidebar
+// "folders" icon, ② JUMP to the folders view and wait until a folder is
+// actually added (or skipped), ③ back to photos — how search works,
+// ④ where the tools live. Each step declares the VIEW it lives on;
+// renderOnboarding switches views before measuring highlight boxes.
 // ---------------------------------------------------------------------------
 let onboardingActive = false;
 let onboardingStep = 0;
 const ONBOARD_STEPS = [
-  { target: "#sidebar-toggle", key: "onboarding.s1", mode: "next" },
-  { target: "#nav-folders", key: "onboarding.s2", mode: "finish" },
+  { view: "photos", target: "#nav-folders", key: "onboarding.s1", mode: "next" },
+  { view: "folders", target: "#btn-add-folder", key: "onboarding.s2", mode: "wait-add" },
+  { view: "photos", target: "#semantic-search-input", key: "onboarding.s3", mode: "next" },
+  { view: "photos", target: "#iconbar", key: "onboarding.s4", mode: "finish" },
 ];
 
 function onboardingShow() {
@@ -3710,6 +4255,14 @@ function renderOnboarding() {
   const old = document.getElementById("onboarding-root");
   if (old) old.remove();
   const step = ONBOARD_STEPS[onboardingStep];
+  // Each step lives on a specific view (C-19.29): switch BEFORE measuring,
+  // or hidden targets measure as 0×0 and the bubble lands on (0,0).
+  if (step.view === "folders") {
+    switchView("folders");
+    loadFolders();
+  } else if (step.view === "photos") {
+    switchView("photos");
+  }
   const root = document.createElement("div");
   root.id = "onboarding-root";
 
@@ -3720,18 +4273,13 @@ function renderOnboarding() {
   if (step.target) {
     anchor = document.querySelector(step.target);
   }
-  if (anchor) {
-    const r = anchor.getBoundingClientRect();
+  let r = anchor ? anchor.getBoundingClientRect() : null;
+  const visible = r && r.width > 2 && r.height > 2;
+  if (visible) {
     box.style.left = `${r.left - 4}px`;
     box.style.top = `${r.top - 4}px`;
     box.style.width = `${r.width + 8}px`;
     box.style.height = `${r.height + 8}px`;
-  } else {
-    // Top-right "progress badge" area (step 5) — the badge may be hidden.
-    box.style.right = "10px";
-    box.style.top = "10px";
-    box.style.width = "240px";
-    box.style.height = "96px";
   }
   root.appendChild(box);
 
@@ -3748,41 +4296,56 @@ function renderOnboarding() {
   skip.textContent = t("onboarding.skip");
   skip.addEventListener("click", onboardingHide);
   actions.appendChild(skip);
-  if (step.mode !== "wait-add" && step.mode !== "wait-photos") {
-    const next = document.createElement("button");
-    next.className = "btn btn--primary";
-    next.textContent = t(step.mode === "finish" ? "onboarding.done" : "onboarding.next");
-    next.addEventListener("click", onboardingAdvance);
-    actions.appendChild(next);
-  }
+  // "wait-add" ALSO gets Next (C-19.29): forcing the user to import before
+  // they can continue just strands them on Skip — and out of the tour.
+  const next = document.createElement("button");
+  next.className = "btn btn--primary";
+  next.textContent = t(step.mode === "finish" ? "onboarding.done" : "onboarding.next");
+  next.addEventListener("click", onboardingAdvance);
+  actions.appendChild(next);
   bubble.appendChild(text);
   bubble.appendChild(actions);
   root.appendChild(bubble);
 
-  // Position the bubble below the highlight; flip above when near bottom.
-  const boxRect = box.getBoundingClientRect();
-  bubble.style.left = `${Math.max(8, Math.min(boxRect.left, window.innerWidth - 340))}px`;
-  const below = boxRect.bottom + 12;
-  if (below + 130 < window.innerHeight) {
-    bubble.style.top = `${below}px`;
-  } else {
-    bubble.style.top = `${Math.max(8, boxRect.top - 130)}px`;
-  }
+  // MOUNT FIRST, measure second (C-19.29 root cause): every rect above was
+  // taken while `root` was still detached — getBoundingClientRect/offsetHeight
+  // all return 0 there, so the bubble always landed at (8, 12) ON TOP of the
+  // very button step 2 asks the user to click.
   document.body.appendChild(root);
+
+  // Position the bubble so it NEVER covers the target: prefer BELOW the box,
+  // then ABOVE (by the bubble's real height); if the target isn't measurable,
+  // center the bubble instead of pinning it to a corner.
+  const boxRect = box.getBoundingClientRect();
+  if (visible) {
+    bubble.style.left = `${Math.max(8, Math.min(boxRect.left, window.innerWidth - 340))}px`;
+    const below = boxRect.bottom + 12;
+    if (below + bubble.offsetHeight + 8 < window.innerHeight) {
+      bubble.style.top = `${below}px`;
+    } else {
+      bubble.style.top = `${Math.max(8, boxRect.top - bubble.offsetHeight - 12)}px`;
+    }
+  } else {
+    bubble.style.left = `${Math.max(8, (window.innerWidth - 340) / 2)}px`;
+    bubble.style.top = `${Math.max(8, window.innerHeight / 2 - 80)}px`;
+  }
 }
 
-// Hook: add-folder succeeded while step 3 is waiting → advance to step 4.
+// Hook: add-folder succeeded while step 1 is waiting → advance to step 2.
 function onboardingAfterAdd() {
   if (onboardingActive && ONBOARD_STEPS[onboardingStep].mode === "wait-add") {
     onboardingAdvance();
   }
 }
-// Hook: user clicked the Photos nav while step 4 is waiting → advance.
-function onboardingOnPhotosClicked() {
-  if (onboardingActive && ONBOARD_STEPS[onboardingStep].mode === "wait-photos") {
-    onboardingAdvance();
-  }
-}
+
+// Settings > "Replay tutorial" (C-19.28): the startup tour only fires on an
+// EMPTY library, so a manual replay is the only way back for everyone else.
+// The tour targets photos-view elements — switch there first and let the
+// view unhide before measuring highlight boxes.
+els.btnReplayOnboarding.addEventListener("click", () => {
+  switchView("photos");
+  requestAnimationFrame(() => onboardingShow());
+});
 
 // Initial load
 (async () => {  try {
@@ -3840,11 +4403,12 @@ function onboardingOnPhotosClicked() {
   // (switchView is not called at startup; C-19.19).
   if (els.btnGalleryView) els.btnGalleryView.classList.add("iconbar__btn--scoped");
   detectAndReportRenderer();
-  // First-run onboarding (C-19.7): show only when the flag is missing —
-  // the first release that ships the tour shows it to every install.
+  // First-run onboarding (C-19.28): show once per install, and only when the
+  // library is still EMPTY — a populated library means an upgrading user who
+  // already knows the flow (loadPhotos resolves well before this timer).
   try {
     const done = await invoke("get_setting", { key: "onboarding_done" });
-    if (done !== "1") setTimeout(onboardingShow, 900);
+    if (done !== "1" && allPhotos.length === 0) setTimeout(onboardingShow, 900);
   } catch (e) {
     /* keep silent — tour is optional */
   }

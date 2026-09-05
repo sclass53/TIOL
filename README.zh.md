@@ -23,6 +23,8 @@
 
 - 📄 **快速筛选重复照片**: 一键整理重复照片，识别过曝/欠曝的废片。
 
+- 📚 **相簿**：自定义相簿 + 镜头组 / 颜色组智能分组；支持多选导入与拖拽整理。
+
 - 💻 **多平台支持**: 支持Windows, MacOS, 和Linux. 支持英伟达 CUDA, cpu, 苹果 CoreML, 等等
 
 - ⚡ **轻量化**: ~50MB的体积，仅单exe和系统onnx驱动，提供移动版。
@@ -39,7 +41,7 @@
 
 ## 安装
 
-[点击查看打包好的版本](https://github.com/sclass53/TIOL/releases)
+[点击查看打包好的版本](https://github.com/sclass53/TIOL-Image-Manager/releases)
 [官方网站](tiol.netlify.app)
 
 ## 快速开始

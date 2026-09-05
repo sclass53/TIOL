@@ -23,6 +23,8 @@ All photos stay on your own hard drive. AI inference runs completely offline. No
 
 - 📄 **Filter redundant images**: One-click organization of redundant and blurry/overexposed images.
 
+- 📚 **Albums**: user albums plus lens & color smart groups; multi-select import and drag-and-drop.
+
 - 💻 **Multiplatform support**: Supports Windows, MacOS, and Linux. Supports Nvidia CUDA, cpu, Apple CoreML，etc.
 
 - ⚡ **Lightweight**: ~50MB in size，single exe and system onnx driver，provides portable editions。
@@ -39,7 +41,7 @@ All photos stay on your own hard drive. AI inference runs completely offline. No
 
 ## Installation
 
-[Compiled Installers & Portable editions](https://github.com/sclass53/TIOL/releases)
+[Compiled Installers & Portable editions](https://github.com/sclass53/TIOL-Image-Manager/releases)
 [Official Website (With Compiled Releases)](https://tiol.netlify.app)
 
 ## Quick Start

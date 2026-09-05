@@ -56,6 +56,7 @@ export const MESSAGES = {
       "exportSelected": "导出",
       "exported": "已导出 {count} 张照片",
       "deleteSelected": "删除",
+      "addToAlbum": "加入相簿",
       "deleteConfirm": "从磁盘永久删除选中的 {count} 张照片？此操作不可恢复。",
       "deleted": "已删除 {count} 张照片",
       "filterColor": "颜色筛选",
@@ -128,13 +129,32 @@ export const MESSAGES = {
       "tag": "标签",
       "colors": "颜色标签",
       "eraser": "橡皮擦：清除标签和颜色",
-      "duplicates": "重复照片"
+      "duplicates": "重复照片",
+      "albums": "相簿"
+    },
+    "albums": {
+      "title": "我的相簿",
+      "lenses": "镜头组",
+      "colors": "颜色组",
+      "new": "新建相簿",
+      "empty": "暂无相簿",
+      "noLenses": "暂无镜头信息",
+      "rename": "重命名相簿",
+      "delete": "删除相簿",
+      "deleteConfirm": "删除相簿「{name}」？（不会删除照片文件）",
+      "created": "已创建相簿「{name}」",
+      "deleted": "已删除相簿",
+      "added": "已将 {count} 张照片加入「{name}」",
+      "removed": "已从相簿移除",
+      "remove": "从相簿移除",
+      "pick": "加入相簿"
     },
     "duplicates": {
       "analyzing": "正在分析重复照片…",
       "summary": "发现 {count} 组重复照片",
       "none": "没有重复照片",
-      "error": "重复分析失败"
+      "error": "重复分析失败",
+      "skipped": "{count} 张照片无法参与比对（缩略图未生成或文件损坏）"
     },
     "sidepanel": {
       "all": "全部",
@@ -166,8 +186,10 @@ export const MESSAGES = {
       "analyzingTitle": "分析曝光"
     },
     "onboarding": {
-      "s1": "点击左下角箭头可展开或收起菜单",
-      "s2": "点击文件夹图标添加你的照片文件夹",
+      "s1": "所有照片从「目录」开始整理。点「下一步」，我们带你打开目录管理。",
+      "s2": "点「＋ 添加目录」选择你的照片文件夹。照片只保存在你自己的电脑上，全程离线。",
+      "s3": "导入后 AI 会在后台自动建立索引与标签；之后在这里用一句话描述就能找照片，例如「海边日落」。",
+      "s4": "左侧工具栏：目录树、相簿、标签与颜色筛选；废片清理和重复照片也在这里。祝使用愉快！",
       "next": "下一步",
       "done": "完成",
       "skip": "跳过"
@@ -226,6 +248,8 @@ export const MESSAGES = {
       "on": "开",
       "off": "关",
       "cacheLabel": "缩略图缓存",
+      "onboarding": "新手教程",
+      "replayOnboarding": "重看教程",
       "clearCache": "清除缓存",
       "cacheCleared": "缓存已清除",
       "modelStatus": "AI 模型",
@@ -299,6 +323,7 @@ export const MESSAGES = {
       "exportSelected": "Export",
       "exported": "{count} photos exported",
       "deleteSelected": "Delete",
+      "addToAlbum": "Add to Album",
       "deleteConfirm": "Permanently delete the {count} selected photos from disk? This cannot be undone.",
       "deleted": "{count} photos deleted",
       "filterColor": "Color filter",
@@ -371,13 +396,32 @@ export const MESSAGES = {
       "tag": "Tags",
       "colors": "Color tags",
       "eraser": "Eraser: clear tags and colors",
-      "duplicates": "Duplicate photos"
+      "duplicates": "Duplicate photos",
+      "albums": "Albums"
+    },
+    "albums": {
+      "title": "My Albums",
+      "lenses": "Lens Groups",
+      "colors": "Color Groups",
+      "new": "New Album",
+      "empty": "No albums yet",
+      "noLenses": "No lens data yet",
+      "rename": "Rename Album",
+      "delete": "Delete Album",
+      "deleteConfirm": "Delete album \"{name}\"? (photo files are kept)",
+      "created": "Album \"{name}\" created",
+      "deleted": "Album deleted",
+      "added": "Added {count} photo(s) to \"{name}\"",
+      "removed": "Removed from album",
+      "remove": "Remove from Album",
+      "pick": "Add to Album"
     },
     "duplicates": {
       "analyzing": "Analyzing duplicates…",
       "summary": "{count} duplicate group(s) found",
       "none": "No duplicate photos",
-      "error": "Duplicate analysis failed"
+      "error": "Duplicate analysis failed",
+      "skipped": "{count} photos can't be compared (no thumbnail or unreadable)"
     },
     "sidepanel": {
       "all": "All",
@@ -409,8 +453,10 @@ export const MESSAGES = {
       "analyzingTitle": "Analyzing Parameters"
     },
     "onboarding": {
-      "s1": "Click the arrow at the bottom-left to expand or collapse the menu",
-      "s2": "Click the folder icon to add your photo folders",
+      "s1": "Everything starts with a folder. Click Next and we'll take you to folder management.",
+      "s2": "Click ＋ Add folder and pick your photo folder. Photos stay on this computer — fully offline.",
+      "s3": "After importing, the AI indexes and tags photos in the background; then just describe what you want, e.g. \"sunset by the sea\".",
+      "s4": "The tool rail: folder tree, albums, tags and color filters; rejects and duplicates live here too. Enjoy!",
       "next": "Next",
       "done": "Done",
       "skip": "Skip"
@@ -469,6 +515,8 @@ export const MESSAGES = {
       "on": "On",
       "off": "Off",
       "cacheLabel": "Thumbnail cache",
+      "onboarding": "Tutorial",
+      "replayOnboarding": "Replay tutorial",
       "clearCache": "Clear cache",
       "cacheCleared": "Cache cleared",
       "modelStatus": "AI models",

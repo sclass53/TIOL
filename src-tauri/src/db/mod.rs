@@ -92,6 +92,17 @@ pub struct Db {
     conn: Mutex<Connection>,
 }
 
+/// A user album (C-19.24): an ordered named set of photo references. Count
+/// is the live membership size — files removed from the library drop out of
+/// albums automatically (FK CASCADE).
+#[derive(Debug, Clone, Serialize)]
+pub struct Album {
+    pub id: i64,
+    pub name: String,
+    pub count: i64,
+}
+
+
 impl Db {
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, String> {
         if let Some(parent) = db_path.as_ref().parent() {
@@ -169,6 +180,20 @@ impl Db {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS albums (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS album_files (
+                album_id INTEGER NOT NULL,
+                file_id INTEGER NOT NULL,
+                added_at INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(album_id, file_id),
+                FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE,
+                FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_album_files_file ON album_files(file_id);
             "#,
         )
     }
@@ -329,6 +354,112 @@ impl Db {
             out.push(r.map_err(|e| e.to_string())?);
         }
         Ok(out)
+    }
+
+pub fn create_album(&self, name: &str) -> Result<Album, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO albums(name, created_at) VALUES(?1, ?2)",
+            params![name, chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(Album { id: conn.last_insert_rowid(), name: name.to_string(), count: 0 })
+    }
+
+    /// All albums with live membership counts, by creation order.
+    pub fn get_albums(&self) -> Result<Vec<Album>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT a.id, a.name, COUNT(af.file_id)
+                 FROM albums a LEFT JOIN album_files af ON af.album_id = a.id
+                 GROUP BY a.id ORDER BY a.created_at, a.id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(Album { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    pub fn rename_album(&self, album_id: i64, name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE albums SET name=?1 WHERE id=?2",
+            params![name, album_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Delete an album — membership rows go with it (CASCADE), photo files
+    /// are untouched.
+    pub fn delete_album(&self, album_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM albums WHERE id=?1", params![album_id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Photos of one album, newest additions first.
+    pub fn get_album_files(&self, album_id: i64) -> Result<Vec<FileRecord>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare_cached(
+                &format!(
+                    "SELECT {FILE_COLS_F} FROM files f
+                     JOIN album_files af ON af.file_id = f.id
+                     WHERE af.album_id=?1 ORDER BY af.added_at DESC, f.id DESC"
+                ),
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([album_id], map_file)
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Add files to an album (idempotent). Returns how many were NEW members.
+    pub fn add_files_to_album(&self, album_id: i64, file_ids: &[i64]) -> Result<usize, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = chrono::Utc::now().timestamp();
+        let mut added = 0usize;
+        for id in file_ids {
+            let n = conn
+                .execute(
+                    "INSERT OR IGNORE INTO album_files(album_id, file_id, added_at) VALUES(?1, ?2, ?3)",
+                    params![album_id, id, now],
+                )
+                .map_err(|e| e.to_string())?;
+            added += n;
+        }
+        Ok(added)
+    }
+
+    pub fn remove_files_from_album(
+        &self,
+        album_id: i64,
+        file_ids: &[i64],
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        for id in file_ids {
+            conn.execute(
+                "DELETE FROM album_files WHERE album_id=?1 AND file_id=?2",
+                params![album_id, id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     pub fn update_last_scan_time(&self, folder_id: i64, ts: i64) -> Result<(), String> {

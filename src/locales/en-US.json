@@ -53,6 +53,7 @@
     "exportSelected": "Export",
     "exported": "{count} photos exported",
     "deleteSelected": "Delete",
+    "addToAlbum": "Add to Album",
     "deleteConfirm": "Permanently delete the {count} selected photos from disk? This cannot be undone.",
     "deleted": "{count} photos deleted",
     "filterColor": "Color filter",
@@ -125,13 +126,32 @@
     "tag": "Tags",
     "colors": "Color tags",
     "eraser": "Eraser: clear tags and colors",
-    "duplicates": "Duplicate photos"
+    "duplicates": "Duplicate photos",
+    "albums": "Albums"
+  },
+  "albums": {
+    "title": "My Albums",
+    "lenses": "Lens Groups",
+    "colors": "Color Groups",
+    "new": "New Album",
+    "empty": "No albums yet",
+    "noLenses": "No lens data yet",
+    "rename": "Rename Album",
+    "delete": "Delete Album",
+    "deleteConfirm": "Delete album \"{name}\"? (photo files are kept)",
+    "created": "Album \"{name}\" created",
+    "deleted": "Album deleted",
+    "added": "Added {count} photo(s) to \"{name}\"",
+    "removed": "Removed from album",
+    "remove": "Remove from Album",
+    "pick": "Add to Album"
   },
   "duplicates": {
     "analyzing": "Analyzing duplicates…",
     "summary": "{count} duplicate group(s) found",
     "none": "No duplicate photos",
-    "error": "Duplicate analysis failed"
+    "error": "Duplicate analysis failed",
+    "skipped": "{count} photos can't be compared (no thumbnail or unreadable)"
   },
   "sidepanel": {
     "all": "All",
@@ -163,8 +183,10 @@
     "analyzingTitle": "Analyzing Parameters"
   },
   "onboarding": {
-    "s1": "Click the arrow at the bottom-left to expand or collapse the menu",
-    "s2": "Click the folder icon to add your photo folders",
+    "s1": "Everything starts with a folder. Click Next and we'll take you to folder management.",
+    "s2": "Click ＋ Add folder and pick your photo folder. Photos stay on this computer — fully offline.",
+    "s3": "After importing, the AI indexes and tags photos in the background; then just describe what you want, e.g. \"sunset by the sea\".",
+    "s4": "The tool rail: folder tree, albums, tags and color filters; rejects and duplicates live here too. Enjoy!",
     "next": "Next",
     "done": "Done",
     "skip": "Skip"
@@ -223,6 +245,8 @@
     "on": "On",
     "off": "Off",
     "cacheLabel": "Thumbnail cache",
+    "onboarding": "Tutorial",
+    "replayOnboarding": "Replay tutorial",
     "clearCache": "Clear cache",
     "cacheCleared": "Cache cleared",
     "modelStatus": "AI models",

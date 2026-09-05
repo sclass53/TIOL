@@ -39,10 +39,14 @@ fn spawn_thumb_prewarm(app_dir: std::path::PathBuf, db: Arc<Db>) {    std::threa
         let mut paths: Vec<String> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for f in &folders {
-            if let Ok(map) = db.get_file_map(f.id) {
-                for p in map.keys() {
+            // DISPLAY paths, not storage keys (C-19.28): the thumbnail cache
+            // key is hash(path, mtime) and every consumer (get_thumbnail,
+            // find_duplicates, AI embed) hashes the display path — prewarming
+            // with storage keys generated thumbnails nobody could find.
+            if let Ok(list) = db.get_folder_paths(f.id) {
+                for p in list {
                     if seen.insert(p.clone()) {
-                        paths.push(p.clone());
+                        paths.push(p);
                     }
                 }
             }
@@ -137,7 +141,6 @@ fn spawn_exif_backfill(db: Arc<Db>) {
 
 struct AppState {
     db: Arc<Db>,
-    ai: ai::MockSkill,
     app_dir: std::path::PathBuf,
     model_dir: std::path::PathBuf,
     ai_queue: ai::queue::AITaskSender,
@@ -384,19 +387,91 @@ struct DupScope {
     path: String,
 }
 
+// ---------------------------------------------------------------------------
+// Albums (C-19.24): named, ordered photo sets + lens/color smart groups on
+// the frontend. All commands are thin Db wrappers.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn create_album(state: tauri::State<AppState>, name: String) -> Result<crate::db::Album, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("album name is empty".into());
+    }
+    state.db.create_album(&name)
+}
+
+#[tauri::command]
+fn get_albums(state: tauri::State<AppState>) -> Result<Vec<crate::db::Album>, String> {
+    state.db.get_albums()
+}
+
+#[tauri::command]
+fn rename_album(state: tauri::State<AppState>, album_id: i64, name: String) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("album name is empty".into());
+    }
+    state.db.rename_album(album_id, &name)
+}
+
+#[tauri::command]
+fn delete_album(state: tauri::State<AppState>, album_id: i64) -> Result<(), String> {
+    state.db.delete_album(album_id)
+}
+
+#[tauri::command]
+fn get_album_files(
+    state: tauri::State<AppState>,
+    album_id: i64,
+) -> Result<Vec<crate::db::FileRecord>, String> {
+    state.db.get_album_files(album_id)
+}
+
+#[tauri::command]
+fn add_files_to_album(
+    state: tauri::State<AppState>,
+    album_id: i64,
+    file_ids: Vec<i64>,
+) -> Result<usize, String> {
+    state.db.add_files_to_album(album_id, &file_ids)
+}
+
+#[tauri::command]
+fn remove_files_from_album(
+    state: tauri::State<AppState>,
+    album_id: i64,
+    file_ids: Vec<i64>,
+) -> Result<(), String> {
+    state.db.remove_files_from_album(album_id, &file_ids)
+}
+
 /// Pixel-level duplicate detection (C-19.17): two photos are duplicates when
 /// their decoded pixels are identical. Hashing the GENERATED THUMBNAIL files
 /// is the trick: the thumbnail encoder is deterministic, so identical pixels
 /// -> byte-identical thumbnails — even across re-encodes, different formats
-/// and different file sizes. Missing thumbnails are generated on the spot.
+/// and different file sizes.
+///
+/// C-19.27: files whose thumbnail doesn't exist yet are SKIPPED, not
+/// generated on the spot — decoding 1700+ full-size sources (worse for RAW:
+/// embedded-preview extraction) inside this loop took minutes with zero
+/// progress feedback, freezing the view. The startup prewarm fills the
+/// cache anyway; re-entering the view afterwards includes them.
+#[derive(serde::Serialize)]
+struct DupScanResult {
+    groups: Vec<Vec<crate::db::FileRecord>>,
+    /// Files excluded this round because their thumbnail was not ready.
+    skipped: usize,
+}
+
 #[tauri::command]
 async fn find_duplicates(
     state: tauri::State<'_, AppState>,
     scope: Option<DupScope>,
-) -> Result<Vec<Vec<crate::db::FileRecord>>, String> {
+) -> Result<DupScanResult, String> {
     let db = state.db.clone();
     let app_dir = state.app_dir.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<Vec<crate::db::FileRecord>>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<DupScanResult, String> {
         let files = db.get_all_files_full()?;
         let files: Vec<crate::db::FileRecord> = match &scope {
             Some(s) => files
@@ -408,14 +483,12 @@ async fn find_duplicates(
         let cache = utils::cache_dir(&app_dir);
         let mut by_hash: std::collections::HashMap<String, Vec<crate::db::FileRecord>> =
             std::collections::HashMap::new();
+        let mut skipped = 0usize;
         for f in files {
-            let p = std::path::Path::new(&f.path);
             let thumb = utils::thumbnail_path(&cache, &f.path, f.mtime);
             if !thumb.exists() {
-                // Corrupt/unsupported files can't be compared — skip them.
-                if utils::generate_thumbnail(p, &thumb).is_err() {
-                    continue;
-                }
+                skipped += 1;
+                continue; // prewarm will fill the cache; no on-the-spot decode
             }
             match crate::update::sha256_hex(&thumb) {
                 Ok(h) => {
@@ -427,8 +500,12 @@ async fn find_duplicates(
         let mut groups: Vec<Vec<crate::db::FileRecord>> =
             by_hash.into_values().filter(|g| g.len() >= 2).collect();
         groups.sort_by(|a, b| a[0].path.cmp(&b[0].path));
-        log::info!("find_duplicates: {} duplicate groups", groups.len());
-        Ok(groups)
+        log::info!(
+            "find_duplicates: {} duplicate groups ({} files skipped, thumbnails not ready)",
+            groups.len(),
+            skipped
+        );
+        Ok(DupScanResult { groups, skipped })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -445,7 +522,10 @@ fn get_photos(
 #[tauri::command]
 fn search_files(state: tauri::State<AppState>, query: String) -> Result<Vec<FileRecord>, String> {
     log::info!("search_files query={}", query);
-    state.ai.search(&state.db, &query)
+    // Plain filename LIKE search (C-19.28): the old MockSkill wrapper added a
+    // hard-coded keyword map (风景→landscape…) on top of the same LIKE query —
+    // meaningless for filenames, removed.
+    state.db.search_files(&query)
 }
 
 #[tauri::command]
@@ -1553,6 +1633,11 @@ fn main() {
                 let builder =
                     tauri::webview::WebviewWindowBuilder::from_config(app.handle(), window_cfg)?
                         .additional_browser_args(hw_args)
+                        // Native drag-drop handling OFF (C-19.25): the handler
+                        // swallows HTML5 drags on WebView2, which broke the
+                        // card→album DnD. The app's imports use dialogs, never
+                        // OS file drops — nothing relies on it.
+                        .disable_drag_drop_handler()
                         .on_page_load(move |window, payload| {
                             if payload.event() != PageLoadEvent::Finished {
                                 return;
@@ -1587,7 +1672,6 @@ fn main() {
             // ---- state ----
             let state = AppState {
                 db: db.clone(),
-                ai: ai::MockSkill::new(),
                 app_dir: app_dir.clone(),
                 model_dir: model_dir.clone(),
                 ai_queue: ai_tx,
@@ -1674,6 +1758,13 @@ fn main() {
             get_folders,
             get_folder_tree,
             find_duplicates,
+            create_album,
+            get_albums,
+            rename_album,
+            delete_album,
+            get_album_files,
+            add_files_to_album,
+            remove_files_from_album,
             get_photos,
             search_files,
             search_description,

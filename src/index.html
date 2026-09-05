@@ -72,6 +72,9 @@
       <button class="iconbar__btn" id="btn-panel-tree" data-i18n-title="iconbar.tree">
         <svg class="iconbar__svg" viewBox="0 0 1152 1024" aria-hidden="true"><path fill="currentColor" d="M576 448h448a64 64 0 0 0 64-64V128a64 64 0 0 0-64-64H800L736 0h-160a64 64 0 0 0-64 64v144H160V32A32 32 0 0 0 128 0H96a32 32 0 0 0-32 32v784a64 64 0 0 0 64 64h384v80a64 64 0 0 0 64 64h448a64 64 0 0 0 64-64V704a64 64 0 0 0-64-64H800l-64-64h-160a64 64 0 0 0-64 64v144H160V304h352v80a64 64 0 0 0 64 64z m32-352h88.24l64 64H992v192H608z m0 576h88.24l64 64H992v192H608z"/></svg>
       </button>
+      <button class="iconbar__btn" id="btn-panel-album" data-i18n-title="iconbar.albums">
+        <svg class="iconbar__svg" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="currentColor" d="M832 320H192a64.07 64.07 0 0 0-64 64v512a64.07 64.07 0 0 0 64 64h640a64.07 64.07 0 0 0 64-64V384a64.07 64.07 0 0 0-64-64z m0 64v338.77L716.25 607a64 64 0 0 0-90.5 0L447 785.75 397.25 736a64.07 64.07 0 0 0-90.5 0L192 850.75V384zM336.75 896h-99.5L352 781.25 401.75 831zM832 896H427.25L671 652.25l161 161V896zM192 224a32 32 0 0 1 32-32h576a32 32 0 0 1 0 64H224a32 32 0 0 1-32-32z m64-128a32 32 0 0 1 32-32h448a32 32 0 0 1 0 64H288a32 32 0 0 1-32-32z m96 544a96 96 0 1 0-96-96 96.11 96.11 0 0 0 96 96z m0-128a32 32 0 1 1-32 32 32 32 0 0 1 32-32z"/></svg>
+      </button>
       <button class="iconbar__btn" id="btn-panel-tag" data-i18n-title="iconbar.tag">
         <svg class="iconbar__svg" viewBox="0 0 512 512" aria-hidden="true"><path fill="currentColor" d="M0 252.118V48C0 21.49 21.49 0 48 0h204.118a48 48 0 0 1 33.941 14.059l211.882 211.882c18.745 18.745 18.745 49.137 0 67.882L293.823 497.941c-18.745 18.745-49.137 18.745-67.882 0L14.059 286.059A48 48 0 0 1 0 252.118zM112 64c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48z"/></svg>
       </button>
@@ -221,6 +224,10 @@
             <button class="btn btn--ghost" id="btn-clear-cache" data-i18n="settings.clearCache">清除缓存</button>
           </div>
           <div class="settings__row">
+            <span class="settings__label" data-i18n="settings.onboarding">新手教程</span>
+            <button class="btn btn--ghost" id="btn-replay-onboarding" data-i18n="settings.replayOnboarding">重看教程</button>
+          </div>
+          <div class="settings__row">
             <span class="settings__label" data-i18n="settings.aiProvider">AI 引擎</span>
             <div class="settings__langs" id="ai-provider-options">
               <button class="btn btn--ghost" data-provider="auto" data-i18n="settings.aiAuto">自动</button>
@@ -253,18 +260,23 @@
 
   <!-- Multi-select bottom bars (C-13/C-19.10): OUTSIDE the view sections —
        a hidden view would otherwise hide these fixed-position pills, so the
-       rejects page never showed them (C-19.11). -->
-  <div class="selection-bar" id="selection-bar" hidden>
-    <span class="selection-bar__count" id="selection-count"></span>
-    <span class="selection-bar__dots" id="selection-color-dots"></span>
-    <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
-    <button class="btn btn--ghost" id="btn-selection-rate" data-i18n="photos.rateSelected" disabled>评分</button>
-    <button class="btn btn--danger" id="btn-selection-delete" data-i18n="photos.deleteSelected" disabled hidden>删除</button>
-  </div>
-  <div class="selection-bar selection-bar--secondary" id="selection-bar-secondary" hidden>
-    <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
-    <button class="btn btn--ghost" id="btn-selection-export" data-i18n="photos.exportSelected" disabled>导出</button>
-    <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
+       rejects page never showed them (C-19.11). Both pills live in one
+       flex-wrap wrapper (C-19.25): side by side when the window is wide
+       enough, STACKED when it is not — they can never overlap again. -->
+  <div class="selection-wrap" id="selection-wrap">
+    <div class="selection-bar" id="selection-bar" hidden>
+      <span class="selection-bar__count" id="selection-count"></span>
+      <span class="selection-bar__dots" id="selection-color-dots"></span>
+      <button class="btn btn--primary" id="btn-selection-tag" data-i18n="photos.addTagSelected" disabled>添加标签</button>
+      <button class="btn btn--ghost" id="btn-selection-rate" data-i18n="photos.rateSelected" disabled>评分</button>
+      <button class="btn btn--ghost" id="btn-selection-album" data-i18n="photos.addToAlbum" disabled>加入相簿</button>
+      <button class="btn btn--danger" id="btn-selection-delete" data-i18n="photos.deleteSelected" disabled hidden>删除</button>
+    </div>
+    <div class="selection-bar selection-bar--secondary" id="selection-bar-secondary" hidden>
+      <button class="btn btn--danger" id="btn-selection-clear-tags" data-i18n="photos.deleteTags" disabled>删除标签</button>
+      <button class="btn btn--ghost" id="btn-selection-export" data-i18n="photos.exportSelected" disabled>导出</button>
+      <button class="btn btn--ghost" id="btn-selection-cancel" data-i18n="dialog.cancel">取消</button>
+    </div>
   </div>
 
   <!-- Image preview (modal, right panel) -->

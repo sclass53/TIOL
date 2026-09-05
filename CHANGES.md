@@ -3,6 +3,72 @@
 > 记录影响行为的关键改动与修复，供后续开发参考。环境注意事项见 BUILD.md / LIMITS.md / ADD.md。
 > 改动编号规则：**C-NN**，按时间倒序（最新在最上）；引用改动时直接写编号。
 
+## C-19.28 · 2025-08 — 新手教程重构 / 预热缩略图键不一致修复 / 代码清理
+
+**需求**：① 重构新手教程，让用户真正「用得懂」；② 重复照片页「跳过 N 张」的数字刷新后不变，要求修复；③ 全面清理：双语文档、无法到达的代码等。
+
+**实现**：
+
+1. **预热缩略图键不一致（跳过数不变的真正根因）**：`spawn_thumb_prewarm` 用 `get_file_map` 的 **storage key**（小写+正斜杠）做缓存键，而 `thumbnail_path` 的键是 hash(path, mtime)，其余所有消费者（`get_thumbnail`、`find_duplicates`、AI `embed_task_image`）哈希的都是 **display path**（真实大小写+反斜杠）——预热生成的缩略图**全部无人能命中**（孤儿文件还占 500MB 缓存池），跳过数因此只反映「用户浏览过哪些照片」而非真实缺失。修复：预热改用 `db.get_folder_paths`（display path，与所有消费者同键）。剩余恒定的跳过数 = 永久损坏文件（13 个解码失败文件，每次启动重试仍失败，预期行为）。
+2. **跳过文案中性化**：「{count} 张照片缩略图未就绪，暂未参与比对」→「{count} 张照片无法参与比对（缩略图未生成或文件损坏）」——不再暗示数字必然归零（损坏文件永远无法比对）。
+3. **新手教程重构（C-19.7/19.8 的两步 → 4 步核心流程）**：① 高亮「＋导入」按钮，**wait-add** 模式等用户真正导入才进下一步（可跳过）→ ② 高亮状态栏解释后台 AI 索引（离线）→ ③ 高亮语义搜索框（一句话找照片 / 文件名 / 标签）→ ④ 高亮工具栏（目录树 / 相簿 / 标签 / 颜色 / 废片 / 查重）。触发条件收紧：仅「首次安装（无 onboarding_done 标记）**且库为空**」时展示——有照片的升级用户不再被打扰。删除已无步骤引用的 `onboardingOnPhotosClicked` 钩子。
+4. **清理**：
+   - 删除 `MockSkill`（`ai/mod.rs` 整个结构 + `AppState.ai` 字段）：名为 Mock 实为「关键词映射 + 文件名 LIKE」，映射表（风景→landscape…）对文件名搜索毫无意义；`search_files` 命令直连 `db.search_files`。
+   - 删除仓库根残留临时文件 `.tmp-lens-check.js`。
+   - README/README.zh 对照同步：补「相簿」功能条目（双语）、仓库链接统一为 `TIOL-Image-Manager`（原 `TIOL` 旧名）。注释中的死引用 LIMITS.md（文件不在仓库）随 MockSkill 一并移除。
+   - 代码层 cargo warning 清零（余下仅为 E: 盘不支持硬链接的增量缓存环境提示）。
+
+
+## C-19.27 · 2025-08 — 重复照片分析卡死修复（跳过未就绪缩略图）
+
+**需求**：分析重复照片会卡死（长时间无响应、无进度）。
+
+**根因**：`find_duplicates` 扫描循环对**缺失缩略图的文件现场全量解码生成**（24MP JPEG 数百 ms/张，RAW 还要做内嵌预览字节扫描+解码更慢）——千级文件的库首轮分析是分钟级纯计算；前端 await 期间只有一句「正在分析…」，叠加 AI 索引队列与缩略图预热同时抢 CPU，体感即「卡死」。
+
+**实现**：
+
+1. **跳过未就绪缩略图**（不再现场生成）：循环内 `thumb.exists()` 为假直接 `skipped += 1; continue`——分析退化为纯哈希已有 360px 缩略图（每张 <1ms，全库秒级）。缩略图缺失是暂态（启动预热队列自动补齐），缺失文件下轮自动参与比对，自愈。
+2. **返回结构**：`find_duplicates` 改返回 `DupScanResult { groups, skipped }`；前端 `loadDuplicates` 适配，`skipped > 0` 时状态栏追加提示（i18n `duplicates.skipped` 中英：「{count} 张照片缩略图未就绪，暂未参与比对」）——用户能知道结果为什么可能不全、以及重进即全量。
+3. 顺带消除：现场生成路径还会周期性触发 500MB 缓存上限的全目录 walk（enforce_cache_limit），一并随现场生成移除。
+
+
+## C-19.26 · 2025-08 — 分支丝滑展开动画 / 修复镜头组列表重复
+
+**需求**：① 文件夹树与相簿面板点击三角形展开时，内容要有丝滑的向下展开动画（同样受设置「动画」开关控制）；② 相簿视图展开镜头组时镜头列表被复制一遍（选中一个镜头后恢复正常）。
+
+**实现**：
+
+1. **grid 高度展开动画**（styles.css + app.js 两处）：`.sidepanel__kids` 由 `hidden` 属性切换改为 `display:grid; grid-template-rows:0fr→1fr` 过渡——内容包进 `.sidepanel__kids-inner`（`overflow:hidden; min-height:0`）保持自然高度，`0fr→1fr` 即从 0 平滑展开到内容高度（纯 CSS，无需 JS 量高）；折叠态加 `visibility:hidden`（隐藏且不接收拖放/点击），过渡结束才生效（收起也平滑）。树面板 `renderNode` 与相簿 `branch()` 同构改造；`body.fx-anim-off` 共享规则加入 `.sidepanel__kids`，「特效>动画」开关直接生效。
+2. **镜头组重复根因**：branch() 折叠→再展开时 `buildContent(kids)` 直接向容器**追加**行，旧内容仍在——每展开一次复制一遍；点击任一镜头触发整面板重建所以「恢复正常」。修复：展开重建前 `inner.textContent = ""` 清空（顺带相簿/颜色组同样受益，且每次展开都拿到最新数据）。
+
+
+## C-19.25 · 2025-08 — 多选双 bubble 不再重叠 / 相簿拖拽修复 / 相簿分支三角动画
+
+**需求**：① 多选模式下底部两个 bubble 重叠，且窗口过窄时要上下布局而不是叠在一起；② 照片拖不进相簿；③ 相簿分支的三角形展开按钮要有与文件夹树一致的旋转动画（受设置「动画」开关控制）。
+
+**实现**：
+
+1. **双 bubble 布局**（index.html + styles.css）：两个 `.selection-bar` 包进新的固定 wrapper `.selection-wrap`（`position:fixed; left/right:12px; bottom:40px; flex-wrap:wrap; justify-content:center; gap:10px; pointer-events:none`），bubble 自身改 `position:static`（删除主栏 `left:50%` 居中与副栏 `right:72px` 两套绝对定位）——并排放得下就并排，放不下 flex-wrap 自动换行，结构上不可能再重叠；显隐逻辑（`[hidden]`）与 `setSelectionBarVisible` 不变。
+2. **拖拽修复**（根因）：窗口默认启用 Tauri 原生 drag-drop handler，在 Windows/WebView2 上会吞掉页面内 HTML5 拖拽（dragstart 后无 dragover/drop）。main.rs 窗口构建链加 `.disable_drag_drop_handler()`。坑：`tauri.conf.json` 里也有对应字段（serde 名 `drag_drop_enabled`，非 camelCase），但 **tauri CLI 的 schema 校验拒绝它**（"Additional properties are not allowed"），dev 直接起不来——本应用窗口本就 `create:false` 手动构建，走 builder API 即可，不依赖 conf。副作用防护：禁用后 OS 文件拖入会触发 WebView 默认导航，前端加全局 `dragover/drop` preventDefault 兜底（元素级相簿 drop 先冒泡执行，不受影响；本应用导入走对话框，无 OS 拖放依赖）。
+3. **分支三角动画**（app.js）：`renderAlbumsPanel` 的 branch() 重构为「持久内容容器 + 原位切换」——与文件夹树同机制（C-19.15）：三角形点击只切 `kids.hidden` 与自身 `--open` 类（rotate(90deg) 过渡复用 `.sidepanel__tri` 既有 `transition: transform 0.2s`），不再整面板重建（重建会销毁动画起点）。内容仅在展开时构建（相簿/镜头数据有缓存，代价可忽略）；`body.fx-anim-off` 的既有共享规则（`transition: none`）自动接管「动画」开关。
+
+
+## C-19.24 · 2025-08 — 相簿（My Albums / 镜头组 / 颜色组）：侧面板 + 作用域过滤 + 多选导入 + 拖拽加入
+
+**需求**：目录树下新增相簿功能（album.svg 图标按钮），面板三分支——我的相簿（可新建/重命名/删除）、镜头组、颜色组（颜色标签）；右侧主界面保持 card + 搜索栏，只显示当前相簿照片；支持多选一键加入相簿、卡片拖入相簿、相簿内右键移除等常规相册能力。
+
+**实现**：
+
+1. **DB**：`albums(id, name UNIQUE NOCASE, created_at)` + `album_files(album_id, file_id, added_at, PK+FK CASCADE)`——文件从库中删除时自动出相簿；成员数 JOIN 实时统计。
+2. **命令**（main.rs，thin wrapper）：`create_album / get_albums / rename_album / delete_album / get_album_files / add_files_to_album / remove_files_from_album`（参数 snake_case，Tauri 自动转换 JS camelCase）。
+3. **侧面板**：iconbar 树按钮下新增相簿按钮（内联 album.svg），`renderSidePanel("albums")`——顶部「全部」行 + 三分支（可折叠，`albumBranchOpen`）；相簿行 = 点击作用域 / 双击重命名（内联 prompt 对话框 `albumPromptDialog`）/ hover ✕ 删除（confirmDialog）；镜头组用 `ensureLensList()`，颜色组复用 COLOR_ORDER + 色点。
+4. **作用域模型**：`albumScope = {kind:"album"|"lens"|"color", ...}`，与 `folderScope` 互斥（任一侧选中即清另一侧，双向 `syncTreeIcon/syncAlbumIcon` 蓝色图标）。`loadPhotos` 相簿分支直接 `get_album_files`，镜头/颜色组对常规拉取做元数据过滤；`runSearch scoped()` 相簿按成员 id Set、智能组按元数据收窄；搜索栏行为与主界面一致。重复照片视图暂不受相簿作用域影响（保持 folderScope）。
+5. **拖拽**：卡片 `draggable`，dragstart 记录 `dragFileIds`（多选中拖一张=携带整个选区）；相簿行 dragover 高亮（`.sidepanel__item--drop`）+ drop 调 `add_files_to_album`（幂等），toast 反馈，目标相簿在显时刷新网格。
+6. **多选导入**：选择栏主栏新增「加入相簿」按钮 → 弹出菜单（`.album-menu` 复用 ctx-menu 样式，锚在栏上方）列出全部相簿（含成员数）+「新建相簿…」（创建后立即导入）。
+7. **相簿内移除**：相簿视图下卡片右键菜单追加「从相簿移除」。
+8. **i18n**：`iconbar.albums` + `albums.*`（16 键，中英）+ `photos.addToAlbum`。
+
+
 ## C-19.23 · 2025-08 — 同名 RAW+JPEG 只索引 JPEG / 搜索结果补显 RAW 孪生 / 索引提速 / 「隐藏重复 RAW」
 
 **需求**：① 同一照片（同名）RAW 与 JPEG 并存时只 index JPEG（减少索引量——RAW 解码预览是全库最慢路径）；② 搜索时两个仍都显示（勾选「隐藏重复 RAW」才隐藏）；③ index 太慢要查因提速；④ 菜单文案「不显示重复 RAW」改「隐藏重复 RAW」。配对范围用户确认：**全库同名配对**（RAW/JPEG 常分目录存放）。

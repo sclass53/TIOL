@@ -437,6 +437,84 @@ body.platform-mac .titlebar {
   font-size: 10px;
   line-height: 1.4;
 }
+/* Albums panel (C-19.24): branch headers + per-row management controls. */
+.sidepanel__branch {
+  display: flex;
+  align-items: center;
+  margin: 6px 6px 2px;
+}
+.sidepanel__branch-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+.sidepanel__add {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sidepanel__add:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.sidepanel__row-del {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  visibility: hidden;
+}
+.sidepanel__row:hover .sidepanel__row-del {
+  visibility: visible;
+}
+.sidepanel__row-del:hover {
+  background: #e81123;
+  color: #fff;
+}
+.sidepanel__item--drop {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* "Add to album" popover: a ctx-menu anchored above the selection bar. */
+.album-menu {
+  position: fixed;
+  z-index: 950;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.album-menu__title {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+.ctx-menu__item--create {
+  color: var(--accent);
+  font-weight: 600;
+}
 .sidepanel__item:hover {
   background: var(--bg-surface);
 }
@@ -453,6 +531,23 @@ body.platform-mac .titlebar {
   padding: 12px 10px;
   color: var(--text-secondary);
   font-size: 13px;
+}
+/* Branch content unfold (C-19.26): grid-rows 0fr→1fr animates the height
+   from 0 to auto (content keeps its natural height in the inner wrapper).
+   Closed branches stay in the DOM but collapse + turn invisible. */
+.sidepanel__kids {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.24s ease, visibility 0.24s;
+}
+.sidepanel__kids--open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+.sidepanel__kids-inner {
+  overflow: hidden;
+  min-height: 0;
 }
 
 /* Active indicator bar: a dedicated element that GLIDES between nav buttons
@@ -1345,12 +1440,25 @@ body.platform-mac .titlebar {
 }
 
 /* Multi-select bottom bar (C-13): fixed over the photos view */
-.selection-bar {
+/* Both selection pills live in one fixed wrapper (C-19.25): flex-wrap lays
+   them side by side and STACKS them when the window is too narrow — no more
+   overlap. pointer-events pass through except on the pills themselves. */
+.selection-wrap {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 12px;
+  right: 12px;
   bottom: 40px;
   z-index: 800;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.selection-bar {
+  position: static;
+  transform: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1359,18 +1467,14 @@ body.platform-mac .titlebar {
   border-radius: 24px;
   padding: 8px 16px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
 }
 .selection-bar[hidden] {
   display: none;
 }
 
-/* Secondary pill (delete-tags / export / cancel) anchored bottom-RIGHT —
-   slightly off the edge so it doesn't hug the scrollbar (C-19.10). */
-.selection-bar--secondary {
-  left: auto;
-  right: 72px;
-  transform: none;
-}
+/* Secondary pill (delete-tags / export / cancel) — now a sibling inside the
+   selection-wrap (C-19.25); no own positioning left. */
 .selection-bar__count {
   color: var(--text-primary);
   font-size: 13px;
@@ -2036,6 +2140,7 @@ body.fx-anim-off .sidebar__indicator {
 /* C-19.15: layout/motion animations follow the same "Effects > Animation"
    switch — triangle rotation, side panel slide, icon bar and sidebar width. */
 body.fx-anim-off .sidepanel__tri,
+body.fx-anim-off .sidepanel__kids,
 body.fx-anim-off .sidepanel,
 body.fx-anim-off .iconbar,
 body.fx-anim-off .sidebar {
