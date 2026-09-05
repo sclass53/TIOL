@@ -4220,6 +4220,10 @@ btnCheckUpdate.addEventListener("click", () => checkForUpdates(true));
 // ---------------------------------------------------------------------------
 let onboardingActive = false;
 let onboardingStep = 0;
+// Sidebar state before the tour forced it open (C-19.29): the tour targets
+// sidebar icons, which move when the rail is collapsed — the tour expands
+// the sidebar and restores the user's state on exit.
+let onboardingSidebarWasOpen = true;
 const ONBOARD_STEPS = [
   { view: "photos", target: "#nav-folders", key: "onboarding.s1", mode: "next" },
   { view: "folders", target: "#btn-add-folder", key: "onboarding.s2", mode: "wait-add" },
@@ -4231,6 +4235,10 @@ function onboardingShow() {
   if (onboardingActive) return;
   onboardingActive = true;
   onboardingStep = 0;
+  // Tour targets sidebar icons — they sit elsewhere while the rail is
+  // collapsed. Expand for the tour, restore on exit.
+  onboardingSidebarWasOpen = sidebarEl.classList.contains("sidebar--open");
+  if (!onboardingSidebarWasOpen) applySidebar(true);
   renderOnboarding();
 }
 
@@ -4238,6 +4246,8 @@ function onboardingHide() {
   onboardingActive = false;
   const root = document.getElementById("onboarding-root");
   if (root) root.remove();
+  // Restore the sidebar state the user had before the tour (C-19.29).
+  if (!onboardingSidebarWasOpen) applySidebar(false);
   // One-time flag: never show again on this install.
   invoke("set_setting", { key: "onboarding_done", value: "1" }).catch(() => {});
 }
@@ -4255,8 +4265,8 @@ function renderOnboarding() {
   const old = document.getElementById("onboarding-root");
   if (old) old.remove();
   const step = ONBOARD_STEPS[onboardingStep];
-  // Each step lives on a specific view (C-19.29): switch BEFORE measuring,
-  // or hidden targets measure as 0×0 and the bubble lands on (0,0).
+  // Each step lives on a specific view (C-19.29): switch views BEFORE
+  // rendering, or the target lives in a hidden view and measures 0×0.
   if (step.view === "folders") {
     switchView("folders");
     loadFolders();
@@ -4269,18 +4279,7 @@ function renderOnboarding() {
   // Highlight box (pointer-events: none — the user still interacts).
   const box = document.createElement("div");
   box.className = "onboarding-box";
-  let anchor = null;
-  if (step.target) {
-    anchor = document.querySelector(step.target);
-  }
-  let r = anchor ? anchor.getBoundingClientRect() : null;
-  const visible = r && r.width > 2 && r.height > 2;
-  if (visible) {
-    box.style.left = `${r.left - 4}px`;
-    box.style.top = `${r.top - 4}px`;
-    box.style.width = `${r.width + 8}px`;
-    box.style.height = `${r.height + 8}px`;
-  }
+  const anchor = step.target ? document.querySelector(step.target) : null;
   root.appendChild(box);
 
   // Bubble (interactive).
@@ -4307,28 +4306,38 @@ function renderOnboarding() {
   bubble.appendChild(actions);
   root.appendChild(bubble);
 
-  // MOUNT FIRST, measure second (C-19.29 root cause): every rect above was
-  // taken while `root` was still detached — getBoundingClientRect/offsetHeight
-  // all return 0 there, so the bubble always landed at (8, 12) ON TOP of the
-  // very button step 2 asks the user to click.
+  // MOUNT hidden, measure AFTER the layout settles (C-19.29): switching
+  // views starts the iconbar (0.2s) and sidebar (0.28s) width transitions —
+  // measuring immediately reads the buttons at their PRE-transition spots,
+  // leaving the highlight floating to the RIGHT of where they land. Wait
+  // out the transitions, then position and reveal.
+  root.style.visibility = "hidden";
   document.body.appendChild(root);
-
-  // Position the bubble so it NEVER covers the target: prefer BELOW the box,
-  // then ABOVE (by the bubble's real height); if the target isn't measurable,
-  // center the bubble instead of pinning it to a corner.
-  const boxRect = box.getBoundingClientRect();
-  if (visible) {
-    bubble.style.left = `${Math.max(8, Math.min(boxRect.left, window.innerWidth - 340))}px`;
-    const below = boxRect.bottom + 12;
-    if (below + bubble.offsetHeight + 8 < window.innerHeight) {
-      bubble.style.top = `${below}px`;
-    } else {
-      bubble.style.top = `${Math.max(8, boxRect.top - bubble.offsetHeight - 12)}px`;
+  setTimeout(() => {
+    if (!onboardingActive || !root.isConnected) return;
+    const r = anchor ? anchor.getBoundingClientRect() : null;
+    const visible = r && r.width > 2 && r.height > 2;
+    if (visible) {
+      box.style.left = `${r.left - 4}px`;
+      box.style.top = `${r.top - 4}px`;
+      box.style.width = `${r.width + 8}px`;
+      box.style.height = `${r.height + 8}px`;
     }
-  } else {
-    bubble.style.left = `${Math.max(8, (window.innerWidth - 340) / 2)}px`;
-    bubble.style.top = `${Math.max(8, window.innerHeight / 2 - 80)}px`;
-  }
+    const boxRect = box.getBoundingClientRect();
+    if (visible) {
+      bubble.style.left = `${Math.max(8, Math.min(boxRect.left, window.innerWidth - 340))}px`;
+      const below = boxRect.bottom + 12;
+      if (below + bubble.offsetHeight + 8 < window.innerHeight) {
+        bubble.style.top = `${below}px`;
+      } else {
+        bubble.style.top = `${Math.max(8, boxRect.top - bubble.offsetHeight - 12)}px`;
+      }
+    } else {
+      bubble.style.left = `${Math.max(8, (window.innerWidth - 340) / 2)}px`;
+      bubble.style.top = `${Math.max(8, window.innerHeight / 2 - 80)}px`;
+    }
+    root.style.visibility = "";
+  }, 320);
 }
 
 // Hook: add-folder succeeded while step 1 is waiting → advance to step 2.
@@ -4337,6 +4346,11 @@ function onboardingAfterAdd() {
     onboardingAdvance();
   }
 }
+
+// Window resizes move every target — re-run the current step's positioning.
+window.addEventListener("resize", () => {
+  if (onboardingActive) renderOnboarding();
+});
 
 // Settings > "Replay tutorial" (C-19.28): the startup tour only fires on an
 // EMPTY library, so a manual replay is the only way back for everyone else.
